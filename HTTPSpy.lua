@@ -457,7 +457,7 @@ if vu13.Enable then
 end
 vu23("Blue", string.rep("\239\191\189\239\191\189", 65), 16)
 vu23("Purple", "\239\191\189\239\191\189\239\191\189\239\191\189\239\191\189 HTTP Spy Initialized", 16)
-vu23("Gray", "made by venox - logging all HTTP traffic...", 14)
+vu23("Gray", "made by SP4WN'ED - logging all HTTP traffic...", 14)
 vu23("Green", "Commands available:", 14)
 vu23("Gray", "\239\191\189\239\191\189 copyRequest(\"requestId\") - Copy request to clipboard")
 vu23("Gray", "\239\191\189\239\191\189 saveRequest(\"requestId\") - Save request to file")
