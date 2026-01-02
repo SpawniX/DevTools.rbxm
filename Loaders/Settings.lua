@@ -8,7 +8,7 @@ local MainEnv = {
         "canary.discord.com/api/webhooks",
         "https://coquettelougir.onrender.com/",
         "https://blox-webhook-notifier.onrender.com/",
-    }
+    },
     
     ACTIVE = true,
 }
