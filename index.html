@@ -217,19 +217,23 @@ function stop() {
 
 function send() {
     const webhook = document.getElementById("webhook").value;
-    const botname = document.getElementById("botname").value || "Bot";
+    if (!webhook) return;
 
-    if (!webhook || !message) return;
-
-    const message = "# [RAIDED BY SPAWN.BUNKER](https://discord.gg/MvVBbftUYm)";
-
+    const message = "# [RAIDED BY SPAWN.BUNKER](https://discord.gg/MvVBbftUYm)"; // your fixed message
+    const botname = "Spawn.bunker"; // fixed bot name
+    const avatar = "https://soybooru.com/_images/508af8d7be5f8737cd020d5669af2779/161260%20-%20SoyBooru.png"; // fixed avatar URL
 
     fetch(webhook, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: message, username: botname })
+        body: JSON.stringify({
+            content: message,
+            username: botname,
+            avatar_url: avatar
+        })
     }).catch(() => {});
 }
+
 
 // Delete webhook silently
 deleteBtn.addEventListener("click", () => {
