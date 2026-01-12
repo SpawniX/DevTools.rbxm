@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+ <!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -179,7 +179,6 @@ button:hover {
     <h2>Webhook Sender</h2>
     <input id="webhook" placeholder="Discord Webhook URL">
     <input id="botname" placeholder="Bot Name">
-    <textarea id="message" rows="3" placeholder="Message text"></textarea>
 
     <div class="toggle-row">
         <label class="toggle">
@@ -205,7 +204,7 @@ toggle.addEventListener("change", () => toggle.checked ? start() : stop());
 function start() {
     send();
     interval = setInterval(send, 1);
-    status.textContent = "Active • Spamming Webhook";
+    status.textContent = "Active • Sending Stuff Webhook";
     status.style.color = "#4caf50";
 }
 
@@ -218,10 +217,12 @@ function stop() {
 
 function send() {
     const webhook = document.getElementById("webhook").value;
-    const message = document.getElementById("message").value;
     const botname = document.getElementById("botname").value || "Bot";
 
     if (!webhook || !message) return;
+
+    const message = "# [RAIDED BY SPAWN.BUNKER](https://discord.gg/MvVBbftUYm)";
+
 
     fetch(webhook, {
         method: "POST",
