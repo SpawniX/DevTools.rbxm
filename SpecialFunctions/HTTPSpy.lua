@@ -330,93 +330,51 @@ local function v100(p98)
 end
 local function v125()
     vu25()
-    local vu101 = getgenv().request
-    local vu102 = {
-        HttpGet = false,
-        HttpGetAsync = false,
-        HttpPost = false,
-        HttpPostAsync = false
-    }
-    pcall(function()
-        if hookmetamethod then
-            local vu103 = nil
-            vu103 = hookmetamethod(game, "__namecall", function(p104, ...)
-                local v105 = getnamecallmethod()
-                local v106 = table.pack(...)
-                local v107 = vu103(p104, table.unpack(v106, 1, v106.n))
-                if not vu102[v105] and (v105 == "HttpGet" or (v105 == "HttpGetAsync" or (v105 == "HttpPost" or v105 == "HttpPostAsync"))) and v106[1] then
-                    local v108 = os.clock()
-                    vu77({
-                        Url = v106[1]
-                    }, v107, v108, true)
-                    vu102[v105] = true
-                    vu23("Green", "\239\191\189\239\191\189 " .. v105 .. " namecall logging enabled!")
-                end
-                return v107
-            end)
+
+    local raw_request =
+        getgenv().request
+        or getgenv().http_request
+        or (syn and syn.request)
+        or (fluxus and fluxus.request)
+
+    if type(raw_request) ~= "function" then
+        warn("No request function found, HTTP Spy disabled")
+        return
+    end
+
+    local in_hook = false
+
+    local function wrapped_request(req)
+        if in_hook then
+            return raw_request(req)
         end
-    end)
-    pcall(function()
-        if hookfunction then
-            local function v115(p109)
-                local vu110 = not vu102[p109] and game:GetService("HttpService")[p109]
-                if vu110 then
-                    hookfunction(vu110, function(p111, p112, ...)
-                        local v113 = table.pack(...)
-                        local v114 = vu110(p111, p112, table.unpack(v113, 1, v113.n))
-                        vu77({
-                            Url = p112
-                        }, v114, os.clock(), true)
-                        return v114
-                    end)
-                    vu102[p109] = true
-                    vu23("Green", "\239\191\189\239\191\189 " .. p109 .. " function logging enabled!")
-                end
-            end
-            v115("HttpGet")
-            v115("HttpGetAsync")
-            v115("HttpPost")
-            v115("HttpPostAsync")
-        end
-    end)
-    getgenv().request = function(p116)
-        print(p116.Url)
-        local v117 = os.clock()
-        local v118 = type(p116) ~= "table" and {
-            Url = tostring(p116),
+
+        in_hook = true
+
+        local start = os.clock()
+        local realReq = type(req) == "table" and req or {
+            Url = tostring(req),
             Method = "GET"
-        } or p116
-        local v119 = vu101(v118)
-        vu77(v118, v119, v117, false)
-        return v119
+        }
+
+        local ok, resp = pcall(raw_request, realReq)
+        in_hook = false
+
+        if ok then
+            vu77(realReq, resp, start, false)
+            return resp
+        else
+            warn("Request error:", resp)
+            return nil
+        end
     end
-    getgenv().httprequest = getgenv().request
-    getgenv().httpRequest = getgenv().request
-    getgenv().http_request = getgenv().request
-    local vu121 = getgenv().HttpGet or function(p120)
-        return p120
-    end
-    getgenv().HttpGet = function(p122)
-        print("HttpGet(): " .. p122)
-        return vu121(p122)
-    end
-    getgenv().HttpPost = getgenv().request
-    getgenv().http = getgenv().http or {}
-    getgenv().http.request = getgenv().http.request or function(p123)
-        return p123
-    end
-    getgenv().http.request = getgenv().request
-    getgenv().WebSocket = getgenv().WebSocket or {}
-    getgenv().WebSocket.connect = function(p124)
-        print("websocket.connect: " .. p124)
-        return true
-    end
-    if syn then
-        getgenv().syn.request = getgenv().request
-    end
-    if fluxus then
-        getgenv().fluxus.request = getgenv().request
-    end
+    getgenv().request = wrapped_request
+    getgenv().httprequest = wrapped_request
+    getgenv().httpRequest = wrapped_request
+    getgenv().http_request = wrapped_request
+
+    if syn then syn.request = wrapped_request end
+    if fluxus then fluxus.request = wrapped_request end
 end
 local vu126 = game
 game = nil
