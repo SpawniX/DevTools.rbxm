@@ -170,6 +170,31 @@ button:hover {
     width: 32px;
     height: 32px;
 }
+
+.lava-bg {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  filter: blur(40px);
+}
+
+.bubble {
+  position: absolute;
+  border-radius: 50%;
+  background: radial-gradient(circle, #ffffff, #6b6b6b);
+  opacity: 0.7;
+  animation: rise linear forwards;
+}
+
+@keyframes rise {
+  from {
+    transform: translateY(110vh);
+  }
+  to {
+    transform: translateY(-30vh);
+  }
+} 
 </style>
 </head>
 
@@ -191,6 +216,8 @@ button:hover {
     <div class="status" id="status">Inactive</div>
 </div>
 
+<div class="lava-bg" id="lava"></div>
+ 
 <script>
 // Webhook sender o algo
 let interval = null;
@@ -245,6 +272,22 @@ deleteBtn.addEventListener("click", () => {
     status.textContent = "Webhook Deleted!";
     status.style.color = "#f44336";
 });
+
+    const lava = document.getElementById("lava");
+
+    setInterval(() => {
+    const bubble = document.createElement("div");
+    bubble.className = "bubble";
+
+    const size = Math.random() * 300 + 150;
+    bubble.style.width = bubble.style.height = size + "px";
+    bubble.style.left = Math.random() * 100 + "%";
+    bubble.style.animationDuration = (10 + Math.random() * 20) + "s";
+
+    lava.appendChild(bubble);
+
+    setTimeout(() => bubble.remove(), 40000);
+    }, 3000);
 </script>
 
 
