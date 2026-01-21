@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <title>DevTools</title>
+</head>
+<style>
+
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  color: #ffffff;
+  background: #0d0d0d;
+}
+
+.gey {
+  color: #888888;
+  font-weight: bold;
+}
+
+.sections {
+  display: flex;
+  gap: 40px;
+  justify-content: center;
+  align-items: stretch;
+}
+
+.sections section {
+  flex: 1;
+  max-width: 400px;
+  padding: 20px;
+  border-radius: 12px;
+  color: white;
+}
+
+.blu {
+  color: #6078ff;
+  font-weight: bold;
+}
+
+a {
+  text-decoration: none;
+  color: inherit;
+}
+
+.navbar {
+  display: flex;
+  justify-content: space-between;
+  padding: 15px 30px;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.logo {
+  font-size: 1.6rem;
+  font-weight: bold;
+}
+
+.nav-links li {
+  list-style: none;
+  display: inline;
+  margin-left: 20px;
+}
+
+.nav-links a:hover {
+  text-decoration: underline;
+}
+
+.hero {
+  text-align: center;
+  padding: 100px 20px;
+}
+
+.hero h1 {
+  font-size: 3rem;
+  margin-bottom: 10px;
+}
+
+.hero p {
+  font-size: 1.2rem;
+  margin-bottom: 20px;
+}
+
+.btn {
+  background: #333;
+  color: #fff;
+  padding: 12px 24px;
+  border-radius: 6px;
+  font-weight: bold;
+  display: inline-block;
+}
+
+.btn.primary {
+  background: #4a90e2;
+}
+
+section {
+  padding: 60px 20px;
+  text-align: center;
+}
+
+.announcements ul,
+.features ul {
+  padding: 0;
+  list-style: none;
+  max-width: 600px;
+  margin: auto;
+  text-align: left;
+}
+
+.announcements li,
+.features li {
+  margin: 10px 0;
+}
+
+.footer {
+  padding: 20px;
+  text-align: center;
+  font-size: 0.9rem;
+}
+
+.lava-bg {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  filter: blur(40px);
+}
+
+.bubble {
+  position: absolute;
+  border-radius: 50%;
+  background: radial-gradient(circle, #ffffff, #6b6b6b);
+  opacity: 0.7;
+  animation: rise linear forwards;
+}
+
+@keyframes rise {
+  from {
+    transform: translateY(110vh);
+  }
+  to {
+    transform: translateY(-30vh);
+  }
+}
+</style>
+
+<body>
+
+  <nav class="navbar">
+    <a href="#home" class="logo">DevTools</a>
+    <ul class="nav-links">
+      <li><a href="#home">Home</a></li>
+      <li><a href="#Lib">Documents</a></li>
+      <li><a href="#docs">Webhook Spammer</a></li>
+      <li class="blu"><a href="https://discord.gg/MvVBbftUYm">Discord</a></li>
+    </ul>
+  </nav>
+
+  <header id="home" class="hero">
+    <h1>DevTools</h1>
+    <p class="gey">"Be Free, Be Proud."</p>
+    <button onclick="window.location.href='#download'" class="btn">Download Now</button>
+  </header>
+
+  <section class="announcements">
+    <h2>Announcements</h2>
+    <ul>
+      <li><strong>01/20/26</strong> — DevTools v1.1 released with enhanced anti-logger and HTTPSPY v2.</li>
+      <li><strong>12/15/25</strong> — Recoded DevTools to v1.3!</li>
+      <li><strong>11/10/25</strong> — DevTools Website public release.</li>
+    </ul>
+  </section>
+
+<div class="sections">
+    <section id="download" class="download">
+        <h2>Download DevTools</h2>
+        <button onclick="copyText()" class="btn">Get Loadstring</button>
+        <p>Available for Most PC Executors</p>
+    </section>
+
+    <section id="docs" class="docs">
+        <h2>Documentation</h2>
+        <button onclick="epstein()" class="btn">View Docs</button>
+        <p>Open source functions and loader</p>
+    </section>
+</div>
+
+  <footer class="footer">
+    <p>© 2026 DevTools • Built by Sephi</p>
+  </footer>
+
+  <div class="lava-bg" id="lava"></div>
+
+
+</body>
+
+<script>
+    const lava = document.getElementById("lava");
+
+    setInterval(() => {
+    const bubble = document.createElement("div");
+    bubble.className = "bubble";
+
+    const size = Math.random() * 300 + 150;
+    bubble.style.width = bubble.style.height = size + "px";
+    bubble.style.left = Math.random() * 100 + "%";
+    bubble.style.animationDuration = (10 + Math.random() * 20) + "s";
+
+    lava.appendChild(bubble);
+
+    setTimeout(() => bubble.remove(), 40000);
+    }, 3000);
+
+    function copyText() {
+        const loadstring = "https://example.com/devtools/loadstring";
+        navigator.clipboard.writeText(loadstring).then(() => {
+        alert("Loadstring copied to clipboard!");
+        });
+    }
+
+    function epstein() {
+        window.location.href = "https://github.com/SpawniX/DevTools.rbxm";
+    }
+  
+</script>
+
+</html>
