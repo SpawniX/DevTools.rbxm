@@ -1,5 +1,5 @@
-return {
-	local lp = game.Players.LocalPlayer.Name
+local lp = game.Players.LocalPlayer.Name
+local nig = {
 	
 	["DevUzi"]=[[require(16662808456):Fire("]]..lp..[[","dev-uzi")]],
 	["SensationHub"]=[[require(100263845596551)("]]..lp..[[", ColorSequence.new(Color3.fromRGB(71, 148, 253), Color3.fromRGB(71, 253, 160)), "Standard")]],
@@ -15,3 +15,4 @@ return {
 	["Steve"]=[[require(15581949972).mc("]]..lp..[[")]],
 	["StummyGuns"]=[[require(85641071395989)("]]..lp..[[")]],					
 }
+return nig
