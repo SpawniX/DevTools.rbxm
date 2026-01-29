@@ -1,4 +1,6 @@
 return {
+	local lp = game.Players.LocalPlayer.Name
+	
 	["DevUzi"]=[[require(16662808456):Fire("]]..lp..[[","dev-uzi")]],
 	["SensationHub"]=[[require(100263845596551)("]]..lp..[[", ColorSequence.new(Color3.fromRGB(71, 148, 253), Color3.fromRGB(71, 253, 160)), "Standard")]],
 	["SuTardPolaria"]=[[require(127072135835227):Unfire("]]..lp..[[", "8-SUTARTTRAVELLER")]],
@@ -8,7 +10,7 @@ return {
 	["Universe Reset"]=[[require(6649537798).UniverseReset("]]..lp..[[")]],
 	["Dex"]=[[require(115579307734800)("]]..lp..[[")]],
 	["Ur a idiot"]=[[require(8222129769).youareanidiot("Victimnamehere")]],
-	["Saitama"]=[[require(14499140823)("]]..lp..[[", "saitama2") ]],
+	["Saitama"]=[[require(14499140823)("]]..lp..[[", "saitama2")]],
 	["Neco Arc"]=[[require(134825709410639).Burenyuu("]]..lp..[[")]],
 	["Steve"]=[[require(15581949972).mc("]]..lp..[[")]],
 	["StummyGuns"]=[[require(85641071395989)("]]..lp..[[")]],					
