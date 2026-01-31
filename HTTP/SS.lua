@@ -1,4 +1,3 @@
-local lp = game.Players.LocalPlayer.Name
 local nig = {
 
 	["DevUzi"]=[[require(16662808456):Fire("]]..lp..[[","dev-uzi")]],
