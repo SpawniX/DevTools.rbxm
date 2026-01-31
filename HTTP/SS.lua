@@ -1,4 +1,4 @@
-return function()
+return function(lp)
 	return {
 		["DevUzi"]=[[require(16662808456):Fire("]]..lp..[[","dev-uzi")]],
 		["SensationHub"]=[[require(100263845596551)("]]..lp..[[", ColorSequence.new(Color3.fromRGB(71, 148, 253), Color3.fromRGB(71, 253, 160)), "Standard")]],
