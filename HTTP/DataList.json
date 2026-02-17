@@ -1,3 +1,3 @@
 {
-  "LuaTest": "require(123456789)(\"%s\")",
+  "LuaTest": "require(123456789)(\"%s\")"
 }
