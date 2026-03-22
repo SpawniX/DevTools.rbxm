@@ -1,0 +1,794 @@
+local Players = game:GetService("Players")
+local TeleportService = game:GetService("TeleportService")
+local HttpService = game:GetService("HttpService")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+local placeId = game.PlaceId
+
+local old = playerGui:FindFirstChild("ServerBrowserGui")
+if old then old:Destroy() end
+
+local allServers = {}
+local activeFilter = "All"
+local minimized = false
+local isDarkMode = true
+local PANEL_W, PANEL_H, ROW_H = 430, 330, 38
+
+local Themes = {
+    Dark = {
+        bg = Color3.fromRGB(15, 15, 20),
+        bgRow = Color3.fromRGB(22, 22, 30),
+        accent = Color3.fromRGB(183, 121, 255),
+        accentDark = Color3.fromRGB(183, 121, 255),
+        border = Color3.fromRGB(183, 121, 255),
+        text = Color3.fromRGB(245, 245, 250),
+        textDim = Color3.fromRGB(200, 200, 210),
+        textMuted = Color3.fromRGB(120, 120, 140),
+        green = Color3.fromRGB(80, 220, 100),
+        greenDark = Color3.fromRGB(20, 45, 30),
+        yellow = Color3.fromRGB(220, 200, 50),
+        red = Color3.fromRGB(220, 80, 80),
+        redDark = Color3.fromRGB(55, 25, 25),
+        tabActive = Color3.fromRGB(183, 121, 255),
+        tabInactive = Color3.fromRGB(26, 26, 36),
+        titleBar = Color3.fromRGB(183, 121, 255),
+        shine = Color3.fromRGB(100, 140, 255),
+        scrollBar = Color3.fromRGB(183, 121, 255),
+        fillBg = Color3.fromRGB(18, 22, 40),
+        currentFill = Color3.fromRGB(25, 60, 35),
+        joinBtnFull = Color3.fromRGB(55, 25, 25),
+        joinBtnFullText = Color3.fromRGB(255, 100, 100),
+        joinBtnHere = Color3.fromRGB(32, 115, 50),
+        joinBtnHereText = Color3.fromRGB(140, 255, 160),
+        joinBtnHover = Color3.fromRGB(50, 120, 255),
+        topBarBg = Color3.fromRGB(20, 20, 28),
+        minBtn = Color3.fromRGB(45, 55, 160),
+        closeBtn = Color3.fromRGB(175, 35, 35),
+        closeBtnText = Color3.fromRGB(255, 180, 180),
+        rowCurrentText = Color3.fromRGB(140, 255, 160),
+        tabTextActive = Color3.fromRGB(255, 255, 255),
+        themeBtnText = Color3.fromRGB(255, 255, 255),
+        joinBtnText = Color3.fromRGB(255, 255, 255),
+    },
+    Light = {
+        bg = Color3.fromRGB(240, 240, 245),
+        bgRow = Color3.fromRGB(255, 255, 255),
+        accent = Color3.fromRGB(37, 99, 235),
+        accentDark = Color3.fromRGB(29, 78, 216),
+        border = Color3.fromRGB(147, 197, 253),
+        text = Color3.fromRGB(15, 23, 42),
+        textDim = Color3.fromRGB(51, 65, 85),
+        textMuted = Color3.fromRGB(100, 116, 139),
+        green = Color3.fromRGB(34, 197, 94),
+        greenDark = Color3.fromRGB(220, 252, 231),
+        yellow = Color3.fromRGB(234, 179, 8),
+        red = Color3.fromRGB(220, 50, 50),
+        redDark = Color3.fromRGB(254, 226, 226),
+        tabActive = Color3.fromRGB(37, 99, 235),
+        tabInactive = Color3.fromRGB(226, 232, 240),
+        titleBar = Color3.fromRGB(37, 99, 235),
+        shine = Color3.fromRGB(147, 197, 253),
+        scrollBar = Color3.fromRGB(37, 99, 235),
+        fillBg = Color3.fromRGB(241, 245, 249),
+        currentFill = Color3.fromRGB(220, 252, 231),
+        joinBtnFull = Color3.fromRGB(254, 226, 226),
+        joinBtnFullText = Color3.fromRGB(185, 28, 28),
+        joinBtnHere = Color3.fromRGB(220, 252, 231),
+        joinBtnHereText = Color3.fromRGB(21, 128, 61),
+        joinBtnHover = Color3.fromRGB(59, 130, 246),
+        topBarBg = Color3.fromRGB(226, 232, 240),
+        minBtn = Color3.fromRGB(59, 130, 246),
+        closeBtn = Color3.fromRGB(220, 50, 50),
+        closeBtnText = Color3.fromRGB(255, 255, 255),
+        rowCurrentText = Color3.fromRGB(21, 128, 61),
+        tabTextActive = Color3.fromRGB(255, 255, 255),
+        themeBtnText = Color3.fromRGB(15, 15, 20),
+        joinBtnText = Color3.fromRGB(255, 255, 255),
+    }
+}
+
+local C = Themes.Dark
+
+local themeableElements = {
+    frames = {},
+    textLabels = {},
+    textButtons = {},
+    strokes = {},
+    scrollFrames = {},
+    uiStrokes = {},
+    rows = {},
+    tabs = {},
+}
+
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "ServerBrowserGui"
+screenGui.ResetOnSpawn = false
+screenGui.IgnoreGuiInset = true
+screenGui.Parent = playerGui
+
+local frame = Instance.new("Frame")
+frame.Size = UDim2.new(0, PANEL_W, 0, PANEL_H)
+frame.Position = UDim2.new(0.5, -PANEL_W / 2, 0.5, -PANEL_H / 2)
+frame.BackgroundColor3 = C.bg
+frame.BorderSizePixel = 0
+frame.Parent = screenGui
+table.insert(themeableElements.frames, frame)
+
+Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 14)
+
+local stroke = Instance.new("UIStroke")
+stroke.Color = C.border
+stroke.Thickness = 1.5
+stroke.Parent = frame
+table.insert(themeableElements.uiStrokes, {obj = stroke, prop = "Color"})
+
+local shine = Instance.new("Frame")
+shine.Size = UDim2.new(0.6, 0, 0, 1)
+shine.Position = UDim2.new(0.2, 0, 0, 1)
+shine.BackgroundColor3 = C.shine
+shine.BackgroundTransparency = 0.5
+shine.BorderSizePixel = 0
+shine.Parent = frame
+table.insert(themeableElements.frames, shine)
+
+local titleBar = Instance.new("Frame")
+titleBar.Name = "TitleBar"
+titleBar.Size = UDim2.new(1, 0, 0, 42)
+titleBar.BackgroundColor3 = C.titleBar
+titleBar.BorderSizePixel = 0
+titleBar.Parent = frame
+table.insert(themeableElements.frames, titleBar)
+
+Instance.new("UICorner", titleBar).CornerRadius = UDim.new(0, 14)
+local titleFix = Instance.new("Frame")
+titleFix.Size = UDim2.new(1, 0, 0.5, 0)
+titleFix.Position = UDim2.new(0, 0, 0.5, 0)
+titleFix.BackgroundColor3 = C.titleBar
+titleFix.BorderSizePixel = 0
+titleFix.Parent = titleBar
+
+local dot = Instance.new("Frame")
+dot.Size = UDim2.new(0, 6, 0, 6)
+dot.Position = UDim2.new(0, 13, 0.5, -3)
+dot.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+dot.BorderSizePixel = 0
+dot.Parent = titleBar
+Instance.new("UICorner", dot).CornerRadius = UDim.new(1, 0)
+
+local tl = Instance.new("TextLabel")
+tl.Text = "Neo SBrowser"
+tl.Size = UDim2.new(1, -180, 1, 0)
+tl.Position = UDim2.new(0, 26, 0, 0)
+tl.BackgroundTransparency = 1
+tl.TextColor3 = Color3.fromRGB(255, 255, 255)
+tl.Font = Enum.Font.GothamBold
+tl.TextSize = 12
+tl.TextXAlignment = Enum.TextXAlignment.Left
+tl.Parent = titleBar
+
+local sep = Instance.new("Frame")
+sep.Size = UDim2.new(1, 0, 0, 1)
+sep.Position = UDim2.new(0, 0, 1, -1)
+sep.BackgroundColor3 = C.border
+sep.BorderSizePixel = 0
+sep.Parent = titleBar
+table.insert(themeableElements.frames, sep)
+
+local function makeBtn(text, bg, tc, px, pw, parent, name)
+    local b = Instance.new("TextButton")
+    b.Name = name or "Button"
+    b.Size = UDim2.new(0, pw, 0, 24)
+    b.Position = UDim2.new(1, px, 0.5, -12)
+    b.BackgroundColor3 = bg
+    b.Text = text
+    b.TextColor3 = tc
+    b.Font = Enum.Font.GothamBold
+    b.TextSize = 11
+    b.BorderSizePixel = 0
+    b.Parent = parent
+    Instance.new("UICorner", b).CornerRadius = UDim.new(0, 6)
+    
+    b.MouseEnter:Connect(function()
+        TweenService:Create(b, TweenInfo.new(0.1), {BackgroundTransparency = 0.3}):Play()
+    end)
+    b.MouseLeave:Connect(function()
+        TweenService:Create(b, TweenInfo.new(0.1), {BackgroundTransparency = 0}):Play()
+    end)
+    
+    table.insert(themeableElements.textButtons, {obj = b, name = name, bg = bg, text = tc})
+    return b
+end
+
+local closeBtn = makeBtn("X", C.closeBtn, C.closeBtnText, -38, 26, titleBar, "Close")
+local minBtn = makeBtn("-", C.minBtn, C.text, -68, 26, titleBar, "Minimize")
+
+local themeBtn = Instance.new("TextButton")
+themeBtn.Name = "ThemeToggle"
+themeBtn.Size = UDim2.new(0, 70, 0, 24)
+themeBtn.Position = UDim2.new(1, -144, 0.5, -12)
+themeBtn.BackgroundColor3 = C.tabInactive
+themeBtn.Text = "🌙 Dark"
+themeBtn.TextColor3 = C.themeBtnText
+themeBtn.Font = Enum.Font.GothamBold
+themeBtn.TextSize = 10
+themeBtn.BorderSizePixel = 0
+themeBtn.Parent = titleBar
+Instance.new("UICorner", themeBtn).CornerRadius = UDim.new(0, 6)
+
+themeBtn.MouseEnter:Connect(function()
+    TweenService:Create(themeBtn, TweenInfo.new(0.1), {BackgroundTransparency = 0.2}):Play()
+end)
+themeBtn.MouseLeave:Connect(function()
+    TweenService:Create(themeBtn, TweenInfo.new(0.1), {BackgroundTransparency = 0}):Play()
+end)
+
+local content = Instance.new("Frame")
+content.Name = "Content"
+content.Size = UDim2.new(1, 0, 1, -42)
+content.Position = UDim2.new(0, 0, 0, 42)
+content.BackgroundTransparency = 1
+content.Parent = frame
+
+local topBar = Instance.new("Frame")
+topBar.Size = UDim2.new(1, -16, 0, 30)
+topBar.Position = UDim2.new(0, 8, 0, 8)
+topBar.BackgroundTransparency = 1
+topBar.Parent = content
+
+local statusLabel = Instance.new("TextLabel")
+statusLabel.Text = "Ready"
+statusLabel.Size = UDim2.new(0.4, 0, 1, 0)
+statusLabel.BackgroundTransparency = 1
+statusLabel.TextColor3 = C.textDim
+statusLabel.Font = Enum.Font.Gotham
+statusLabel.TextSize = 10
+statusLabel.TextXAlignment = Enum.TextXAlignment.Left
+statusLabel.Parent = topBar
+table.insert(themeableElements.textLabels, {obj = statusLabel, type = "status"})
+
+local serverCountLabel = Instance.new("TextLabel")
+serverCountLabel.Text = ""
+serverCountLabel.Size = UDim2.new(0.22, 0, 1, 0)
+serverCountLabel.Position = UDim2.new(0.4, 0, 0, 0)
+serverCountLabel.BackgroundTransparency = 1
+serverCountLabel.TextColor3 = C.accent
+serverCountLabel.Font = Enum.Font.GothamBold
+serverCountLabel.TextSize = 10
+serverCountLabel.TextXAlignment = Enum.TextXAlignment.Center
+serverCountLabel.Parent = topBar
+table.insert(themeableElements.textLabels, {obj = serverCountLabel, type = "accent"})
+
+local refreshBtn = Instance.new("TextButton")
+refreshBtn.Size = UDim2.new(0, 80, 0, 24)
+refreshBtn.Position = UDim2.new(1, -80, 0.5, -12)
+refreshBtn.BackgroundColor3 = C.accentDark
+refreshBtn.Text = "🔄 Refresh"
+refreshBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+refreshBtn.Font = Enum.Font.GothamBold
+refreshBtn.TextSize = 10
+refreshBtn.BorderSizePixel = 0
+refreshBtn.Parent = topBar
+Instance.new("UICorner", refreshBtn).CornerRadius = UDim.new(0, 6)
+
+refreshBtn.MouseEnter:Connect(function()
+    TweenService:Create(refreshBtn, TweenInfo.new(0.1), {BackgroundColor3 = C.joinBtnHover}):Play()
+end)
+refreshBtn.MouseLeave:Connect(function()
+    TweenService:Create(refreshBtn, TweenInfo.new(0.1), {BackgroundColor3 = C.accentDark}):Play()
+end)
+table.insert(themeableElements.textButtons, {obj = refreshBtn, name = "Refresh", bg = C.accentDark})
+
+local tabBar = Instance.new("Frame")
+tabBar.Size = UDim2.new(1, -16, 0, 26)
+tabBar.Position = UDim2.new(0, 8, 0, 44)
+tabBar.BackgroundColor3 = C.topBarBg
+tabBar.BorderSizePixel = 0
+tabBar.Parent = content
+table.insert(themeableElements.frames, tabBar)
+
+Instance.new("UICorner", tabBar).CornerRadius = UDim.new(0, 7)
+local tabStroke = Instance.new("UIStroke")
+tabStroke.Color = C.border
+tabStroke.Parent = tabBar
+table.insert(themeableElements.uiStrokes, {obj = tabStroke, prop = "Color"})
+
+local TABS = {{"All", "🌐 ALL"}, {"Small", "🟢 SMALL"}, {"Good Ping", "⚡ FAST"}}
+local tabButtons = {}
+
+local function setActiveTab(name)
+    activeFilter = name
+    for _, t in pairs(tabButtons) do
+        if t.name == name then
+            TweenService:Create(t.btn, TweenInfo.new(0.15), {BackgroundColor3 = C.tabActive}):Play()
+            t.lbl.TextColor3 = Color3.fromRGB(255, 255, 255)
+        else
+            TweenService:Create(t.btn, TweenInfo.new(0.15), {BackgroundColor3 = C.tabInactive}):Play()
+            t.lbl.TextColor3 = C.textMuted
+        end
+    end
+end
+
+local tabW = 1 / #TABS
+for i, tab in ipairs(TABS) do
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(tabW, -2, 1, 0)
+    btn.Position = UDim2.new(tabW * (i - 1), 1, 0, 0)
+    btn.BackgroundColor3 = i == 1 and C.tabActive or C.tabInactive
+    btn.Text = ""
+    btn.BorderSizePixel = 0
+    btn.Parent = tabBar
+    
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
+    
+    local lbl = Instance.new("TextLabel")
+    lbl.Text = tab[2]
+    lbl.Size = UDim2.new(1, 0, 1, 0)
+    lbl.BackgroundTransparency = 1
+    lbl.TextColor3 = i == 1 and Color3.fromRGB(255, 255, 255) or C.textMuted
+    lbl.Font = Enum.Font.GothamBold
+    lbl.TextSize = 10
+    lbl.Parent = btn
+    
+    table.insert(themeableElements.tabs, {btn = btn, lbl = lbl, name = tab[1]})
+    table.insert(tabButtons, {name = tab[1], btn = btn, lbl = lbl})
+    
+    btn.MouseButton1Click:Connect(function()
+        setActiveTab(tab[1])
+        task.spawn(renderServers)
+    end)
+end
+
+local divider = Instance.new("Frame")
+divider.Size = UDim2.new(1, -16, 0, 1)
+divider.Position = UDim2.new(0, 8, 0, 75)
+divider.BackgroundColor3 = C.border
+divider.BorderSizePixel = 0
+divider.Parent = content
+table.insert(themeableElements.frames, divider)
+
+local scrollFrame = Instance.new("ScrollingFrame")
+scrollFrame.Size = UDim2.new(1, -16, 1, -80)
+scrollFrame.Position = UDim2.new(0, 8, 0, 78)
+scrollFrame.BackgroundTransparency = 1
+scrollFrame.BorderSizePixel = 0
+scrollFrame.ScrollBarThickness = 4
+scrollFrame.ScrollBarImageColor3 = C.scrollBar
+scrollFrame.ScrollBarImageTransparency = 0.3
+scrollFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+scrollFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
+scrollFrame.Parent = content
+table.insert(themeableElements.scrollFrames, scrollFrame)
+
+Instance.new("UIListLayout", scrollFrame).Padding = UDim.new(0, 2)
+
+local function applyTheme()
+    local theme = isDarkMode and Themes.Dark or Themes.Light
+    C = theme
+    
+    frame.BackgroundColor3 = theme.bg
+    titleBar.BackgroundColor3 = theme.titleBar
+    titleFix.BackgroundColor3 = theme.titleBar
+    tabBar.BackgroundColor3 = theme.topBarBg
+    shine.BackgroundColor3 = theme.shine
+    sep.BackgroundColor3 = theme.border
+    divider.BackgroundColor3 = theme.border
+    
+    stroke.Color = theme.border
+    tabStroke.Color = theme.border
+    
+    scrollFrame.ScrollBarImageColor3 = theme.scrollBar
+    
+    themeBtn.Text = isDarkMode and "🌙 Dark" or "☀️ Light"
+    themeBtn.BackgroundColor3 = theme.tabInactive
+    themeBtn.TextColor3 = theme.themeBtnText
+    
+    for _, item in ipairs(themeableElements.textLabels) do
+        local lbl = item.obj
+        if item.type == "status" then
+            if statusLabel.Text:match("Ready") or statusLabel.Text:match("Loading") then
+                lbl.TextColor3 = theme.textDim
+            end
+        elseif item.type == "accent" then
+            lbl.TextColor3 = theme.accent
+        end
+    end
+    
+    for _, item in ipairs(themeableElements.textButtons) do
+        local btn = item.obj
+        if item.name == "Close" then
+            btn.BackgroundColor3 = theme.closeBtn
+        elseif item.name == "Minimize" then
+            btn.BackgroundColor3 = theme.minBtn
+        elseif item.name == "Refresh" then
+            btn.BackgroundColor3 = theme.accentDark
+        end
+    end
+    
+    for _, t in ipairs(themeableElements.tabs) do
+        if t.name == activeFilter then
+            t.btn.BackgroundColor3 = theme.tabActive
+            t.lbl.TextColor3 = Color3.fromRGB(255, 255, 255)
+        else
+            t.btn.BackgroundColor3 = theme.tabInactive
+            t.lbl.TextColor3 = theme.textMuted
+        end
+    end
+    
+    for _, rowData in ipairs(themeableElements.rows) do
+        local row = rowData.frame
+        local isCurrent = rowData.isCurrent
+        local isFull = rowData.isFull
+        
+        row.BackgroundColor3 = isCurrent and theme.greenDark or theme.bgRow
+        
+        local fill = row:FindFirstChild("FillBar")
+        if fill then
+            fill.BackgroundColor3 = isCurrent and theme.currentFill or theme.fillBg
+        end
+        
+        local bar = row:FindFirstChild("StatusBar")
+        if bar then
+            if isCurrent then
+                bar.BackgroundColor3 = theme.green
+            else
+                local ping = rowData.ping or 999
+                if ping <= 80 then
+                    bar.BackgroundColor3 = theme.green
+                elseif ping <= 150 then
+                    bar.BackgroundColor3 = theme.yellow
+                else
+                    bar.BackgroundColor3 = theme.red
+                end
+            end
+        end
+        
+        for _, child in ipairs(row:GetChildren()) do
+            if child:IsA("TextLabel") then
+                local text = child.Text
+                if text:match("^%d%d$") then
+                    child.TextColor3 = theme.textMuted
+                elseif text:match("/") then
+                    child.TextColor3 = isFull and theme.red or theme.text
+                elseif text:match("ms") then
+                    local ping = tonumber(text:match("%d+")) or 999
+                    if ping <= 80 then
+                        child.TextColor3 = theme.green
+                    elseif ping <= 150 then
+                        child.TextColor3 = theme.yellow
+                    else
+                        child.TextColor3 = theme.red
+                    end
+                elseif text:match("%.%.") then
+                    child.TextColor3 = theme.textMuted
+                end
+            elseif child:IsA("TextButton") then
+                if isCurrent then
+                    child.BackgroundColor3 = theme.joinBtnHere
+                    child.TextColor3 = theme.joinBtnHereText
+                elseif isFull then
+                    child.BackgroundColor3 = theme.joinBtnFull
+                    child.TextColor3 = theme.joinBtnFullText
+                else
+                    child.BackgroundColor3 = theme.accentDark
+                    child.TextColor3 = theme.joinBtnText
+                end
+            elseif child:IsA("UIStroke") then
+                child.Color = theme.green
+            end
+        end
+    end
+end
+
+themeBtn.MouseButton1Click:Connect(function()
+    isDarkMode = not isDarkMode
+    applyTheme()
+end)
+
+local dragging = false
+local dragInput = nil
+local dragStart = nil
+local startPos = nil
+
+local function updateDrag(input)
+    if not dragging or not dragStart or not startPos then return end
+    local delta = input.Position - dragStart
+    frame.Position = UDim2.new(
+        startPos.X.Scale, 
+        startPos.X.Offset + delta.X, 
+        startPos.Y.Scale, 
+        startPos.Y.Offset + delta.Y
+    )
+end
+
+titleBar.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or 
+       input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPos = frame.Position
+        dragInput = input
+        
+        local changedConn = nil
+        changedConn = input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
+                dragInput = nil
+                if changedConn then
+                    changedConn:Disconnect()
+                end
+            end
+        end)
+    end
+end)
+
+titleBar.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement or 
+       input.UserInputType == Enum.UserInputType.Touch then
+        dragInput = input
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if input == dragInput and dragging then
+        updateDrag(input)
+    end
+end)
+
+RunService.RenderStepped:Connect(function()
+    if dragging and dragInput then
+        updateDrag(dragInput)
+    end
+end)
+
+closeBtn.MouseButton1Click:Connect(function()
+    screenGui:Destroy()
+end)
+
+minBtn.MouseButton1Click:Connect(function()
+    minimized = not minimized
+    if minimized then
+        content.Visible = false
+        TweenService:Create(frame, TweenInfo.new(0.18, Enum.EasingStyle.Quart), {Size = UDim2.new(0, PANEL_W, 0, 42)}):Play()
+        minBtn.Text = "+"
+    else
+        content.Visible = true
+        TweenService:Create(frame, TweenInfo.new(0.18, Enum.EasingStyle.Quart), {Size = UDim2.new(0, PANEL_W, 0, PANEL_H)}):Play()
+        minBtn.Text = "-"
+    end
+end)
+
+local function pingColor(p)
+    if p <= 80 then return C.green
+    elseif p <= 150 then return C.yellow
+    else return C.red end
+end
+
+local function pingText(p)
+    if p <= 80 then return "🟢 " .. p .. "ms"
+    elseif p <= 150 then return "🟡 " .. p .. "ms"
+    else return "🔴 " .. p .. "ms" end
+end
+
+local function buildRow(index, server)
+    local isCurrent = server.id == game.JobId
+    local playing = server.playing or 0
+    local maxP = server.maxPlayers or 0
+    local ping = server.ping or math.random(30, 220)
+    local isFull = playing >= maxP
+    local fillPct = maxP > 0 and (playing / maxP) or 0
+
+    local row = Instance.new("Frame")
+    row.Name = "ServerRow_" .. index
+    row.Size = UDim2.new(1, 0, 0, ROW_H)
+    row.BackgroundColor3 = isCurrent and C.greenDark or C.bgRow
+    row.BorderSizePixel = 0
+    row.Parent = scrollFrame
+    Instance.new("UICorner", row).CornerRadius = UDim.new(0, 6)
+
+    local rowData = {
+        frame = row,
+        isCurrent = isCurrent,
+        isFull = isFull,
+        ping = ping,
+        serverId = server.id
+    }
+    table.insert(themeableElements.rows, rowData)
+
+    if isCurrent then
+        local s = Instance.new("UIStroke")
+        s.Name = "CurrentStroke"
+        s.Color = C.green
+        s.Thickness = 1
+        s.Transparency = 0.4
+        s.Parent = row
+    end
+
+    local bar = Instance.new("Frame")
+    bar.Name = "StatusBar"
+    bar.Size = UDim2.new(0, 2, 0.55, 0)
+    bar.Position = UDim2.new(0, 0, 0.225, 0)
+    bar.BackgroundColor3 = isCurrent and C.green or pingColor(ping)
+    bar.BorderSizePixel = 0
+    bar.Parent = row
+    Instance.new("UICorner", bar).CornerRadius = UDim.new(1, 0)
+
+    local fill = Instance.new("Frame")
+    fill.Name = "FillBar"
+    fill.Size = UDim2.new(fillPct, 0, 1, 0)
+    fill.BackgroundColor3 = isCurrent and C.currentFill or C.fillBg
+    fill.BackgroundTransparency = 0.5
+    fill.BorderSizePixel = 0
+    fill.Parent = row
+    Instance.new("UICorner", fill).CornerRadius = UDim.new(0, 6)
+
+    local function mk(name, txt, x, w, color, font, size)
+        local l = Instance.new("TextLabel")
+        l.Name = name
+        l.Text = txt
+        l.Size = UDim2.new(0, w, 1, 0)
+        l.Position = UDim2.new(0, x, 0, 0)
+        l.BackgroundTransparency = 1
+        l.TextColor3 = color
+        l.Font = font
+        l.TextSize = size
+        l.TextXAlignment = Enum.TextXAlignment.Left
+        l.Parent = row
+        return l
+    end
+
+    mk("Index", string.format("%02d", index), 8, 24, C.textMuted, Enum.Font.GothamBold, 9)
+    mk("Players", playing .. "/" .. maxP, 36, 72, isFull and C.red or C.text, Enum.Font.GothamBold, 13)
+    mk("Ping", pingText(ping), 116, 90, pingColor(ping), Enum.Font.GothamBold, 10)
+    mk("ServerId", string.sub(server.id, 1, 7) .. "..", 210, 85, C.textMuted, Enum.Font.Code, 9)
+
+    local joinBtn = Instance.new("TextButton")
+    joinBtn.Name = "JoinButton"
+    joinBtn.Size = UDim2.new(0, 64, 0, ROW_H - 12)
+    joinBtn.Position = UDim2.new(1, -68, 0.5, -(ROW_H - 12) / 2)
+    joinBtn.BorderSizePixel = 0
+    joinBtn.Font = Enum.Font.GothamBold
+    joinBtn.TextSize = 10
+    joinBtn.Parent = row
+    Instance.new("UICorner", joinBtn).CornerRadius = UDim.new(0, 5)
+
+    if isCurrent then
+        joinBtn.Text = "✅ HERE"
+        joinBtn.BackgroundColor3 = C.joinBtnHere
+        joinBtn.TextColor3 = C.joinBtnHereText
+        joinBtn.Active = false
+    elseif isFull then
+        joinBtn.Text = "FULL"
+        joinBtn.BackgroundColor3 = C.joinBtnFull
+        joinBtn.TextColor3 = C.joinBtnFullText
+        joinBtn.Active = false
+    else
+        joinBtn.Text = "JOIN"
+        joinBtn.BackgroundColor3 = C.accentDark
+        joinBtn.TextColor3 = C.joinBtnText
+        joinBtn.MouseButton1Click:Connect(function()
+            joinBtn.Text = "⏳"
+            joinBtn.BackgroundColor3 = isDarkMode and Color3.fromRGB(35, 35, 55) or Color3.fromRGB(226, 232, 240)
+            statusLabel.Text = "🚀 Joining #" .. index
+            statusLabel.TextColor3 = C.accent
+            task.wait(0.3)
+            TeleportService:TeleportToPlaceInstance(placeId, server.id, player)
+        end)
+        joinBtn.MouseEnter:Connect(function()
+            TweenService:Create(joinBtn, TweenInfo.new(0.1), {BackgroundColor3 = C.joinBtnHover}):Play()
+        end)
+        joinBtn.MouseLeave:Connect(function()
+            TweenService:Create(joinBtn, TweenInfo.new(0.1), {BackgroundColor3 = C.accentDark}):Play()
+        end)
+    end
+end
+
+function renderServers()
+    themeableElements.rows = {}
+    for _, c in ipairs(scrollFrame:GetChildren()) do
+        if not c:IsA("UIListLayout") then c:Destroy() end
+    end
+    
+    local filtered = {}
+    for _, s in ipairs(allServers) do
+        local playing = s.playing or 0
+        local maxP = math.max(s.maxPlayers or 1, 1)
+        local ping = s.ping or 999
+        
+        if activeFilter == "All" then
+            table.insert(filtered, s)
+        elseif activeFilter == "Small" then
+            if (playing / maxP) < 0.25 then table.insert(filtered, s) end
+        elseif activeFilter == "Good Ping" then
+            if ping <= 80 then table.insert(filtered, s) end
+        end
+    end
+    
+    if activeFilter == "Good Ping" then
+        table.sort(filtered, function(a, b) return (a.ping or 999) < (b.ping or 999) end)
+    elseif activeFilter == "Small" then
+        table.sort(filtered, function(a, b) return (a.playing or 0) < (b.playing or 0) end)
+    else
+        table.sort(filtered, function(a, b)
+            if a.id == game.JobId then return true end
+            if b.id == game.JobId then return false end
+            return (a.playing or 0) > (b.playing or 0)
+        end)
+    end
+    
+    if #filtered == 0 then
+        local msg = Instance.new("TextLabel")
+        msg.Name = "EmptyMessage"
+        msg.Text = activeFilter == "Good Ping" and "⚡ No servers under 80ms"
+            or activeFilter == "Small" and "🟢 No small servers found"
+            or "🌐 No servers found"
+        msg.Size = UDim2.new(1, 0, 0, 50)
+        msg.BackgroundTransparency = 1
+        msg.TextColor3 = C.textMuted
+        msg.Font = Enum.Font.Gotham
+        msg.TextSize = 11
+        msg.Parent = scrollFrame
+    end
+    
+    for i, s in ipairs(filtered) do buildRow(i, s) end
+    serverCountLabel.Text = #filtered .. "/" .. #allServers
+end
+
+local function loadServers()
+    themeableElements.rows = {}
+    for _, c in ipairs(scrollFrame:GetChildren()) do
+        if not c:IsA("UIListLayout") then c:Destroy() end
+    end
+    allServers = {}
+    statusLabel.Text = "⏳ Loading..."
+    statusLabel.TextColor3 = C.yellow
+    serverCountLabel.Text = ""
+    refreshBtn.Text = "⏳ ..."
+    refreshBtn.Active = false
+    
+    local seen = {}
+    
+    local function fetchPage(sort, maxPg)
+        local cursor = ""
+        local pages = 0
+        repeat
+            local url = "https://games.roblox.com/v1/games/" .. placeId .. "/servers/Public?sortOrder=" .. sort .. "&limit=100" .. (cursor ~= "" and "&cursor=" .. cursor or "")
+            local ok, result = pcall(function() return HttpService:JSONDecode(game:HttpGet(url)) end)
+            if not ok or not result or not result.data then break end
+            for _, s in ipairs(result.data) do
+                if not seen[s.id] then
+                    seen[s.id] = true
+                    table.insert(allServers, s)
+                end
+            end
+            cursor = result.nextPageCursor or ""
+            pages = pages + 1
+            task.wait(0.1)
+        until cursor == "" or pages >= maxPg
+    end
+    
+    fetchPage("Desc", 3)
+    fetchPage("Asc", 3)
+    
+    if not seen[game.JobId] then
+        table.insert(allServers, 1, {
+            id = game.JobId,
+            playing = #Players:GetPlayers(),
+            maxPlayers = Players.MaxPlayers,
+            ping = 50
+        })
+    end
+    
+    statusLabel.Text = "✅ Loaded"
+    statusLabel.TextColor3 = C.green
+    refreshBtn.Text = "🔄 Refresh"
+    refreshBtn.Active = true
+    renderServers()
+end
+
+refreshBtn.MouseButton1Click:Connect(function() task.spawn(loadServers) end)
+
+task.spawn(loadServers)
