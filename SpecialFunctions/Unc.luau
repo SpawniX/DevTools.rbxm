@@ -1,0 +1,1896 @@
+local function __betterGetService(name)
+	local service = game:FindService(name)
+	if service then
+		return service
+	end
+	local ok, inst = pcall(Instance.new, name)
+	if ok and inst and typeof(inst) == "Instance" then
+		return inst
+	end
+	return nil
+end
+local passes, fails, undefined, existsOnly, missing, optionalMissing = 0, 0, 0, 0, 0, 0;
+local running = 0;
+local list_pass = {};
+local list_fail = {};
+local list_exists_only = {};
+local list_missing = {};
+local list_alias_missing = {};
+local list_optional_missing = {};
+local messageboxPassed = false;
+local IsOnMobile = (function()
+	local platform = (__betterGetService("UserInputService")):GetPlatform();
+	if platform == Enum.Platform.IOS or platform == Enum.Platform.Android or platform == Enum.Platform.AndroidTV or platform == Enum.Platform.Chromecast or platform == Enum.Platform.MetaOS then
+		return true;
+	end;
+	if platform == Enum.Platform.None then
+		return (__betterGetService("UserInputService")).TouchEnabled and (not ((__betterGetService("UserInputService")).KeyboardEnabled or (__betterGetService("UserInputService")).MouseEnabled));
+	end;
+	return false;
+end)();
+local function getGlobal(path)
+	local value = getfenv(0);
+	while value ~= nil and path ~= "" do
+		local name, nextValue = string.match(path, "^([^.]+)%.?(.*)$");
+		value = value[name];
+		path = nextValue;
+	end;
+	return value;
+end;
+local function normalizeError(err)
+	local text = tostring(err or "Unknown error");
+	text = text:gsub("\r\n", "\n");
+	local lines = {};
+	local lastLine, repeatCount = nil, 0;
+	local function flush()
+		if not lastLine then
+			return;
+		end;
+		if repeatCount > 1 then
+			table.insert(lines, lastLine .. " (repeated x" .. tostring(repeatCount) .. ")");
+		else
+			table.insert(lines, lastLine);
+		end;
+	end;
+	for line in text:gmatch("[^\n]+") do
+		if line == lastLine then
+			repeatCount += 1;
+		else
+			flush();
+			lastLine = line;
+			repeatCount = 1;
+		end;
+	end;
+	flush();
+	if #lines == 0 then
+		lines = {
+			text
+		};
+	end;
+	local maxLines = 4;
+	if #lines > maxLines then
+		local hidden = #lines - maxLines;
+		while #lines > maxLines do
+			table.remove(lines);
+		end;
+		table.insert(lines, "[+" .. tostring(hidden) .. " more lines]");
+	end;
+	local out = table.concat(lines, " | ");
+	local maxLength = 420;
+	if #out > maxLength then
+		out = out:sub(1, maxLength) .. "... [truncated]";
+	end;
+	return out;
+end;
+local DEFAULT_TEST_TIMEOUT = 15;
+local function runCallbackWithTimeout(callback, timeoutSec)
+	timeoutSec = tonumber(timeoutSec) or DEFAULT_TEST_TIMEOUT;
+	local finished = false;
+	local success, result;
+	task.spawn(function()
+		success, result = pcall(callback);
+		finished = true;
+	end);
+	local started = os.clock();
+	while not finished and os.clock() - started < timeoutSec do
+		task.wait(0.05);
+	end;
+	if finished then
+		return success, result;
+	end;
+	return false, "Timed out after " .. tostring(timeoutSec) .. "s";
+end;
+local function test(name, aliases, callback, optional, timeoutSec)
+	optional = optional == true;
+	running += 1;
+	task.spawn(function()
+		local mainValue = getGlobal(name);
+		local mainExists = mainValue ~= nil;
+		if not callback then
+			if mainExists then
+				existsOnly += 1;
+				table.insert(list_exists_only, name);
+				print("⏺️ " .. name .. " • Exists but behavior is not tested");
+			elseif optional then
+				optionalMissing += 1;
+				table.insert(list_optional_missing, name);
+				print("⏺️ " .. name .. " • Optional feature not provided");
+			else
+				fails += 1;
+				missing += 1;
+				table.insert(list_missing, name);
+				warn("⛔ " .. name .. " • Global is missing in this environment");
+			end;
+		elseif not mainExists then
+			if optional then
+				optionalMissing += 1;
+				table.insert(list_optional_missing, name);
+				print("⏺️ " .. name .. " • Optional feature not provided");
+			else
+				fails += 1;
+				missing += 1;
+				table.insert(list_missing, name);
+				warn("⛔ " .. name .. " • Global is missing in this environment");
+			end;
+		else
+			local success, message = runCallbackWithTimeout(callback, timeoutSec);
+			if success then
+				passes += 1;
+				table.insert(list_pass, name .. (message and " • " .. message or ""));
+				print("✅ " .. name .. (message and " • " .. message or ""));
+			else
+				fails += 1;
+				local shortError = normalizeError(message);
+				table.insert(list_fail, name .. " - " .. shortError);
+				warn("⛔ " .. name .. " failed: " .. shortError);
+			end;
+		end;
+		local undefinedAliases = {};
+		for _, alias in ipairs(aliases) do
+			if getGlobal(alias) == nil then
+				table.insert(undefinedAliases, alias);
+			end;
+		end;
+		if #undefinedAliases > 0 then
+			undefined += 1;
+			table.insert(list_alias_missing, name .. " -> " .. table.concat(undefinedAliases, ", "));
+			warn("⚠️ Missing alias(es) for " .. name .. ": " .. table.concat(undefinedAliases, ", "));
+		end;
+		running -= 1;
+	end);
+end;
+print("\nUNC Environment Check");
+print("✅ - Pass (exists and behavior works)");
+print("⛔ - Fail (missing or behavior broken)");
+print("⏺️ - Exists but not behavior-tested / optional missing");
+print("⚠️ - Missing aliases\n");
+local function shallowEqual(t1, t2)
+	if t1 == t2 then
+		return true;
+	end;
+	local UNIQUE_TYPES = {
+		["function"] = true,
+		table = true,
+		userdata = true,
+		thread = true
+	};
+	for k, v in pairs(t1) do
+		if UNIQUE_TYPES[type(v)] then
+			if type(t2[k]) ~= type(v) then
+				return false;
+			end;
+		elseif t2[k] ~= v then
+			return false;
+		end;
+	end;
+	for k, v in pairs(t2) do
+		if UNIQUE_TYPES[type(v)] then
+			if type(t2[k]) ~= type(v) then
+				return false;
+			end;
+		elseif t1[k] ~= v then
+			return false;
+		end;
+	end;
+	return true;
+end;
+if isfolder and makefolder and delfolder then
+	if isfolder(".tests") then
+		delfolder(".tests");
+	end;
+	makefolder(".tests");
+end;
+test("appendfile", {}, function()
+	writefile(".tests/appendfile.txt", "su");
+	appendfile(".tests/appendfile.txt", "cce");
+	appendfile(".tests/appendfile.txt", "ss");
+	assert(readfile(".tests/appendfile.txt") == "success", "Did not append the file");
+end);
+test("fireclickdetector", {}, function()
+	local detector = Instance.new("ClickDetector");
+	fireclickdetector(detector, 50, "MouseHoverEnter");
+end);
+test("fireproximityprompt", {}, function()
+	local cam = workspace.CurrentCamera;
+	if not cam then
+		return "No CurrentCamera; cannot proximity-test";
+	end;
+	local baseCF = cam.CFrame;
+	local function worldPos(ofs)
+		return baseCF.Position + baseCF.RightVector * ofs.X + baseCF.UpVector * ofs.Y + baseCF.LookVector * ofs.Z;
+	end;
+	local function runCase(ofs)
+		local part = Instance.new("Part");
+		part.Anchored = true;
+		part.CanCollide = false;
+		part.Size = Vector3.new(3, 3, 3);
+		part.Position = worldPos(ofs);
+		part.Parent = workspace;
+		local prompt = Instance.new("ProximityPrompt");
+		prompt.ActionText = "UNC_TEST";
+		prompt.ObjectText = "UNC";
+		prompt.RequiresLineOfSight = false;
+		prompt.MaxActivationDistance = 10000;
+		prompt.Parent = part;
+		local triggered = false;
+		prompt.Triggered:Connect(function()
+			triggered = true;
+		end);
+		local ok, err = pcall(fireproximityprompt, prompt);
+		assert(ok, err or "fireproximityprompt errored");
+		task.wait(0.15);
+		part:Destroy();
+		return triggered;
+	end;
+	local near = runCase(Vector3.new(0, 0, 10));
+	assert(near, "fireproximityprompt did not trigger for nearby/in-view prompt");
+	local behind = runCase(Vector3.new(0, 0, -10));
+	assert(behind, "fireproximityprompt did not trigger for prompt behind camera/out of view");
+	local far = runCase(Vector3.new(0, 0, 2000));
+	assert(far, "fireproximityprompt did not trigger for a very far prompt (large MaxActivationDistance)");
+	local side = runCase(Vector3.new(2000, 0, 10));
+	assert(side, "fireproximityprompt did not trigger for prompt far off to the side/out of view");
+end);
+test("firetouchinterest", {}, function()
+	local plrs = __betterGetService("Players");
+	local lp = plrs.LocalPlayer;
+	if not lp then
+		return "LocalPlayer missing; cannot touch-test";
+	end;
+	local char = lp.Character or lp.CharacterAdded:Wait();
+	local root = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChildWhichIsA("BasePart");
+	if not root then
+		return "No character root part; cannot touch-test";
+	end;
+	local part = Instance.new("Part");
+	part.Size = Vector3.new(4, 4, 4);
+	part.Anchored = true;
+	part.CanCollide = true;
+	part.Position = root.Position + Vector3.new(0, 5000, 0);
+	part.Parent = workspace;
+	local touched = false;
+	local touchEnded = false;
+	part.Touched:Connect(function(hit)
+		if hit == root then
+			touched = true;
+		end;
+	end);
+	part.TouchEnded:Connect(function(hit)
+		if hit == root then
+			touchEnded = true;
+		end;
+	end);
+	local ok1, err1 = pcall(firetouchinterest, root, part, 0);
+	assert(ok1, err1 or "firetouchinterest (touch) errored");
+	task.wait(0.05);
+	local ok2, err2 = pcall(firetouchinterest, root, part, 1);
+	assert(ok2, err2 or "firetouchinterest (untouch) errored");
+	task.wait(0.05);
+	if not touched or (not touchEnded) then
+		return "Events not observed; implementation may be stubbed or limited";
+	end;
+	part:Destroy();
+end);
+test("firesignal", {}, function()
+	local b = Instance.new("BindableEvent");
+	local hit = 0;
+	b.Event:Connect(function(a, b)
+		if a == 1 and b == 2 then
+			hit += 1;
+		end;
+	end);
+	firesignal(b.Event, 1, 2);
+	task.wait();
+	assert(hit == 1, "firesignal did not invoke RBXScriptSignal correctly");
+end);
+task.wait(0.5);
+test("cache.invalidate", {}, function()
+	local container = Instance.new("Folder");
+	local part = Instance.new("Part", container);
+	cache.invalidate(container:FindFirstChild("Part"));
+	assert(part ~= container:FindFirstChild("Part"), "Reference `part` could not be invalidated");
+end);
+test("cache.iscached", {}, function()
+	local part = Instance.new("Part");
+	assert(cache.iscached(part), "Part should be cached");
+	cache.invalidate(part);
+	assert(not cache.iscached(part), "Part should not be cached");
+end);
+test("cache.replace", {}, function()
+	local part = Instance.new("Part");
+	local fire = Instance.new("Fire");
+	cache.replace(part, fire);
+	assert(part ~= fire, "Part was not replaced with Fire");
+end);
+test("checkcaller", {}, function()
+	assert(checkcaller(), "Main scope should return true");
+end);
+test("cleardrawcache", {}, function()
+	cleardrawcache();
+end);
+test("clonefunction", {}, function()
+	local function testf()
+		return "success";
+	end;
+	local copy = clonefunction(testf);
+	assert(testf() == copy(), "The clone should return the same value as the original");
+	assert(testf ~= copy, "The clone should not be equal to the original");
+	local old = hookfunction(testf, function()
+		return "hooked";
+	end);
+	assert(testf() == "hooked", "hookfunction setup failed on original closure");
+	assert(copy() == "success", "clonefunction should not inherit hooks applied to the original closure");
+	assert(old() == "success", "hookfunction should return the original pre-hook behavior");
+end);
+test("cloneref", {}, function()
+	local part = Instance.new("Part");
+	local clone = cloneref(part);
+	assert(part ~= clone, "Clone should not be equal to original");
+	clone.Name = "Test";
+	assert(part.Name == "Test", "Clone should have updated the original");
+end);
+test("compareinstances", {}, function()
+	local part = Instance.new("Part");
+	local clone = cloneref(part);
+	assert(part ~= clone, "Clone should not be equal to original");
+	assert(compareinstances(part, clone), "Clone should be equal to original when using compareinstances");
+end);
+test("crypt.base64decode", {
+	"crypt.base64.decode",
+	"crypt.base64_decode",
+	"base64.decode",
+	"base64_decode"
+}, function()
+	assert(crypt.base64decode("dGVzdA==") == "test", "Base64 decoding failed");
+end);
+test("crypt.base64encode", {
+	"crypt.base64.encode",
+	"crypt.base64_encode",
+	"base64.encode",
+	"base64_encode"
+}, function()
+	assert(crypt.base64encode("test") == "dGVzdA==", "Base64 encoding failed");
+end);
+test("crypt.decrypt", {}, function()
+	local key, iv = crypt.generatekey(), crypt.generatekey();
+	local encrypted = crypt.encrypt("test", key, iv, "CBC");
+	local decrypted = crypt.decrypt(encrypted, key, iv, "CBC");
+	assert(decrypted == "test", "Failed to decrypt raw string from encrypted data");
+end);
+test("crypt.encrypt", {}, function()
+	local key = crypt.generatekey();
+	local encrypted, iv = crypt.encrypt("test", key, nil, "CBC");
+	assert(iv, "crypt.encrypt should return an IV");
+	local decrypted = crypt.decrypt(encrypted, key, iv, "CBC");
+	assert(decrypted == "test", "Failed to decrypt raw string from encrypted data");
+end);
+test("crypt.generatebytes", {}, function()
+	local size = math.random(10, 100);
+	local bytes = crypt.generatebytes(size);
+	assert(#crypt.base64decode(bytes) == size, "The decoded result should be " .. size .. " bytes long (got " .. #crypt.base64decode(bytes) .. " decoded, " .. #bytes .. " raw)");
+end);
+test("crypt.generatekey", {}, function()
+	local key = crypt.generatekey();
+	assert(#crypt.base64decode(key) == 32, "Generated key should be 32 bytes long when decoded");
+end);
+test("crypt.hash", {}, function()
+	local algorithms = {
+		"sha1",
+		"sha384",
+		"sha512",
+		"md5",
+		"sha256",
+		"sha3-224",
+		"sha3-256",
+		"sha3-512"
+	};
+	for _, algorithm in ipairs(algorithms) do
+		local hash = crypt.hash("test", algorithm);
+		assert(hash, "crypt.hash on algorithm '" .. algorithm .. "' should return a hash");
+	end;
+end);
+test("debug.getconstant", {}, function()
+	local function testf()
+		print("Hello, world!");
+	end;
+	assert(debug.getconstant(testf, 1) == "print", "First constant must be print");
+	assert(debug.getconstant(testf, 2) == nil, "Second constant must be nil");
+	assert(debug.getconstant(testf, 3) == "Hello, world!", "Third constant must be 'Hello, world!'");
+end);
+test("debug.getconstants", {}, function()
+	local function testf()
+		local num = 5000 .. 50000;
+		print("Hello, world!", num, warn);
+	end;
+	local constants = debug.getconstants(testf);
+	assert(constants[1] == 50000, "First constant must be 50000");
+	assert(constants[2] == "print", "Second constant must be print");
+	assert(constants[3] == nil, "Third constant must be nil");
+	assert(constants[4] == "Hello, world!", "Fourth constant must be 'Hello, world!'");
+	assert(constants[5] == "warn", "Fifth constant must be warn");
+end);
+test("debug.getinfo", {}, function()
+	local types = {
+		source = "string",
+		short_src = "string",
+		func = "function",
+		what = "string",
+		currentline = "number",
+		name = "string",
+		nups = "number",
+		numparams = "number",
+		is_vararg = "number"
+	};
+	local function testf(...)
+		print(...);
+	end;
+	local info = debug.getinfo(testf);
+	for k, v in pairs(types) do
+		assert(info[k] ~= nil, "Did not return a table with a '" .. k .. "' field");
+		assert(type(info[k]) == v, "Did not return a table with " .. k .. " as a " .. v .. " (got " .. type(info[k]) .. ")");
+	end;
+end);
+test("debug.getproto", {}, function()
+	local function testf()
+		local function proto()
+			return true;
+		end;
+	end;
+	local proto = (debug.getproto(testf, 1, true))[1];
+	local realproto = debug.getproto(testf, 1);
+	assert(proto, "Failed to get the inner function");
+	assert(proto() == true, "The inner function did not return anything");
+	if not realproto() then
+		return "Proto return values are disabled on this executor";
+	end;
+end);
+test("debug.getprotos", {}, function()
+	local function testf()
+		local function _1()
+			return true;
+		end;
+		local function _2()
+			return true;
+		end;
+		local function _3()
+			return true;
+		end;
+	end;
+	for i in ipairs(debug.getprotos(testf)) do
+		local proto = (debug.getproto(testf, i, true))[1];
+		local realproto = debug.getproto(testf, i);
+		assert(proto(), "Failed to get inner function " .. i);
+		if not realproto() then
+			return "Proto return values are disabled on this executor";
+		end;
+	end;
+end);
+test("debug.getstack", {}, function()
+	local _ = "a" .. "b";
+	assert(debug.getstack(1, 1) == "ab", "The first item in the stack should be 'ab'");
+	assert((debug.getstack(1))[1] == "ab", "The first item in the stack table should be 'ab'");
+end);
+test("debug.getupvalue", {}, function()
+	local upvalue = function()
+	end;
+	local function testf()
+		print(upvalue);
+	end;
+	assert(debug.getupvalue(testf, 1) == upvalue, "Unexpected value returned from debug.getupvalue");
+end);
+test("debug.getupvalues", {}, function()
+	local upvalue = function()
+	end;
+	local function testf()
+		print(upvalue);
+	end;
+	local upvalues = debug.getupvalues(testf);
+	assert(upvalues[1] == upvalue, "Unexpected value returned from debug.getupvalues");
+end);
+test("debug.setconstant", {}, function()
+	local function testf()
+		return "fail";
+	end;
+	debug.setconstant(testf, 1, "success");
+	assert(testf() == "success", "debug.setconstant did not set the first constant");
+end);
+test("debug.setstack", {}, function()
+	local function testf()
+		return "fail", debug.setstack(1, 1, "success");
+	end;
+	assert(testf() == "success", "debug.setstack did not set the first stack item");
+end);
+test("debug.setupvalue", {}, function()
+	local function upvalue()
+		return "fail";
+	end;
+	local function testf()
+		return upvalue();
+	end;
+	debug.setupvalue(testf, 1, function()
+		return "success";
+	end);
+	assert(testf() == "success", "debug.setupvalue did not set the first upvalue");
+end);
+test("delfile", {}, function()
+	writefile(".tests/delfile.txt", "Hello, world!");
+	delfile(".tests/delfile.txt");
+	assert(isfile(".tests/delfile.txt") == false, "Failed to delete file (isfile = " .. tostring(isfile(".tests/delfile.txt")) .. ")");
+end);
+test("delfolder", {}, function()
+	makefolder(".tests/delfolder");
+	delfolder(".tests/delfolder");
+	assert(isfolder(".tests/delfolder") == false, "Failed to delete folder (isfolder = " .. tostring(isfolder(".tests/delfolder")) .. ")");
+end);
+test("dofile", {}, function()
+	_G.__UNC_DOFILE = nil;
+	writefile(".tests/dofile.lua", "_G.__UNC_DOFILE = true");
+	task.wait();
+	dofile(".tests/dofile.lua");
+	assert(_G.__UNC_DOFILE == true, "dofile did not execute the file chunk");
+end);
+test("Drawing", {}, function()
+	assert(type(Drawing) == "table", "Drawing must be a table");
+	assert(type(Drawing.new) == "function", "Drawing.new must be a function");
+	assert(type(Drawing.Fonts) == "table", "Drawing.Fonts must be a table");
+	local obj = Drawing.new("Square");
+	assert(obj ~= nil, "Drawing.new did not return an object");
+	obj.Visible = false;
+	local ok = pcall(function()
+		obj:Destroy();
+	end);
+	assert(ok, "Drawing object could not be destroyed");
+end);
+test("Drawing.Fonts", {}, function()
+	assert(Drawing.Fonts.UI == 0, "Did not return the correct id for UI");
+	assert(Drawing.Fonts.System == 1, "Did not return the correct id for System");
+	assert(Drawing.Fonts.Plex == 2, "Did not return the correct id for Plex");
+	assert(Drawing.Fonts.Monospace == 3, "Did not return the correct id for Monospace");
+end);
+test("Drawing.new", {}, function()
+	local drawing = Drawing.new("Square");
+	drawing.Visible = false;
+	local canDestroy = pcall(function()
+		drawing:Destroy();
+	end);
+	assert(canDestroy, "Drawing:Destroy() should not throw an error");
+end);
+test("getcallingscript", {}, function()
+	local ok, fromHere = pcall(getcallingscript);
+	if not ok then
+		return "Errored in this context: " .. normalizeError(fromHere);
+	end;
+	if fromHere == nil then
+		return "Returned nil in this thread context";
+	end;
+	assert(typeof(fromHere) == "Instance", "getcallingscript must return an Instance or nil");
+	local isScriptInstance = fromHere:IsA("LocalScript") or fromHere:IsA("ModuleScript") or fromHere:IsA("Script");
+	assert(isScriptInstance, "getcallingscript returned a non-script Instance");
+end, true);
+test("getcallbackvalue", {}, function()
+	local bindable = Instance.new("BindableFunction");
+	local function testf()
+	end;
+	bindable.OnInvoke = testf;
+	assert(getcallbackvalue(bindable, "OnInvoke") == testf, "Did not return the correct value");
+end);
+test("getclipboard", {}, function()
+	local v = getclipboard();
+	assert(v == nil or type(v) == "string", "getclipboard must return a string or nil");
+end, true);
+test("getconnections", {}, function()
+	local types = {
+		Enabled = "boolean",
+		ForeignState = "boolean",
+		LuaConnection = "boolean",
+		Function = "function",
+		Thread = "thread",
+		Fire = "function",
+		Defer = "function",
+		Disconnect = "function",
+		Disable = "function",
+		Enable = "function"
+	};
+	local bindable = Instance.new("BindableEvent");
+	bindable.Event:Connect(function()
+	end);
+	local connection = (getconnections(bindable.Event))[1];
+	for k, v in pairs(types) do
+		assert(connection[k] ~= nil, "Did not return a table with a '" .. k .. "' field");
+		assert(type(connection[k]) == v, "Did not return a table with " .. k .. " as a " .. v .. " (got " .. type(connection[k]) .. ")");
+	end;
+end);
+test("getcustomasset", {}, function()
+	writefile(".tests/getcustomasset.txt", "success");
+	local contentId = getcustomasset(".tests/getcustomasset.txt");
+	assert(type(contentId) == "string", "Did not return a string");
+	assert(#contentId > 0, "Returned an empty string");
+	assert(string.match(contentId, "rbxasset://") == "rbxasset://", "Did not return an rbxasset url");
+end);
+test("getgc", {}, function()
+	local gc = getgc();
+	assert(type(gc) == "table", "Did not return a table");
+	assert(#gc > 0, "Did not return a table with any values");
+end);
+test("getgenv", {}, function()
+	(getgenv()).__TEST_GLOBAL = true;
+	assert(__TEST_GLOBAL, "Failed to set a global variable");
+	(getgenv()).__TEST_GLOBAL = nil;
+end);
+test("gethiddenproperty", {}, function()
+	local fire = Instance.new("Fire");
+	local property, isHidden = gethiddenproperty(fire, "size_xml");
+	assert(property == 5, "Did not return the correct value");
+	assert(isHidden == true, "Did not return whether the property was hidden");
+end);
+test("gethui", {}, function()
+	assert(typeof(gethui()) == "Instance", "Did not return an Instance");
+end);
+test("getinstances", {}, function()
+	assert((getinstances())[1]:IsA("Instance"), "The first value is not an Instance");
+end);
+test("getloadedmodules", {}, function()
+	local modules = getloadedmodules();
+	assert(type(modules) == "table", "Did not return a table");
+	assert(#modules > 0, "Did not return a table with any values");
+	assert(typeof(modules[1]) == "Instance", "First value is not an Instance");
+	assert(modules[1]:IsA("ModuleScript"), "First value is not a ModuleScript");
+end);
+test("require", {}, function()
+	local plrs = __betterGetService("Players");
+	local lp = plrs.LocalPlayer;
+	if not lp then
+		return "LocalPlayer missing; cannot test require(Invisicam)";
+	end;
+	local playerScripts = lp:FindFirstChild("PlayerScripts");
+	if not playerScripts then
+		return "PlayerScripts missing; cannot test require(Invisicam)";
+	end;
+	local playerModule = playerScripts:FindFirstChild("PlayerModule");
+	if not playerModule then
+		return "PlayerModule missing; cannot test require(Invisicam)";
+	end;
+	local cameraModule = playerModule:FindFirstChild("CameraModule");
+	if not cameraModule then
+		return "CameraModule missing; cannot test require(Invisicam)";
+	end;
+	local invisicam = cameraModule:FindFirstChild("Invisicam");
+	if not (invisicam and invisicam:IsA("ModuleScript")) then
+		return "Invisicam ModuleScript not found; cannot test require(Invisicam)";
+	end;
+	local ok, mod = pcall(require, invisicam);
+	assert(ok, mod or "require(Invisicam) errored");
+	local t = type(mod);
+	assert(t == "table" or t == "function", "require(Invisicam) returned unexpected type: " .. t);
+	return "require(Invisicam) succeeded (" .. t .. ")";
+end);
+test("getnamecallmethod", {}, function()
+	local method;
+	local ref;
+	ref = hookmetamethod(game, "__namecall", function(...)
+		if not method then
+			method = getnamecallmethod();
+		end;
+		return ref(...);
+	end);
+	__betterGetService("Lighting");
+	assert(method == "GetService", "Did not get the correct method (GetService)");
+end);
+test("hookmetamethod", {}, function()
+	local seen = false;
+	local old;
+	old = hookmetamethod(game, "__namecall", function(self, ...)
+		local m = getnamecallmethod();
+		if self == game and m == "GetService" then
+			seen = true;
+		end;
+		return old(self, ...);
+	end);
+	__betterGetService("Lighting");
+	assert(seen == true, "hookmetamethod did not intercept __namecall");
+end);
+test("hookfunction", {
+	"hookfunc"
+}, function()
+	local called = 0;
+	local target = function(n)
+		return n + 1;
+	end;
+	local old;
+	old = hookfunction(target, function(n)
+		called += 1;
+		return n + 1000;
+	end);
+	assert(type(old) == "function", "hookfunction must return the original function");
+	local hooked = target(1);
+	assert(called == 1, "hookfunction did not intercept target function");
+	assert(hooked == 1001, "hooked target returned unexpected value: " .. tostring(hooked));
+	local ok, original = pcall(old, 1);
+	assert(ok, "returned original function threw: " .. tostring(original));
+	assert(original == 2, "returned original function is not original (possible fake hookfunction)");
+end);
+test("getnilinstances", {}, function()
+	assert((getnilinstances())[1]:IsA("Instance"), "The first value is not an Instance");
+	assert((getnilinstances())[1].Parent == nil, "The first value is not parented to nil");
+end);
+test("getrawmetatable", {}, function()
+	local metatable = {
+		__metatable = "Locked!"
+	};
+	local object = setmetatable({}, metatable);
+	assert(getrawmetatable(object) == metatable, "Did not return the metatable");
+end);
+test("getrenv", {}, function()
+	assert(_G ~= (getrenv())._G, "The variable _G in the executor is identical to _G in the game");
+end);
+test("getrunningscripts", {}, function()
+	local scripts = getrunningscripts();
+	assert(type(scripts) == "table", "Did not return a table");
+	assert(#scripts > 0, "Did not return a table with any values");
+	assert(typeof(scripts[1]) == "Instance", "First value is not an Instance");
+	assert(scripts[1]:IsA("ModuleScript") or scripts[1]:IsA("LocalScript"), "First value is not a ModuleScript or LocalScript");
+end);
+test("getscriptbytecode", {
+	"dumpstring"
+}, function()
+	local animate = (__betterGetService("Players")).LocalPlayer.Character.Animate;
+	local bytecode = getscriptbytecode(animate);
+	assert(type(bytecode) == "string", "Did not return a string for Character.Animate (a " .. animate.ClassName .. ")");
+end);
+test("getscripthash", {}, function()
+	local animate = (__betterGetService("Players")).LocalPlayer.Character.Animate:Clone();
+	local hash = getscripthash(animate);
+	local source = animate.Source;
+	animate.Source = "print('Hello, world!')";
+	task.defer(function()
+		animate.Source = source;
+	end);
+	local newHash = getscripthash(animate);
+	assert(hash ~= newHash, "Did not return a different hash for a modified script");
+	assert(newHash == getscripthash(animate), "Did not return the same hash for a script with the same source");
+end);
+test("getscripts", {}, function()
+	local scripts = getscripts();
+	assert(type(scripts) == "table", "Did not return a table");
+	assert(#scripts > 0, "Did not return a table with any values");
+	assert(typeof(scripts[1]) == "Instance", "First value is not an Instance");
+	assert(scripts[1]:IsA("ModuleScript") or scripts[1]:IsA("LocalScript"), "First value is not a ModuleScript or LocalScript");
+end);
+test("getsenv", {}, function()
+	local animate = (__betterGetService("Players")).LocalPlayer.Character.Animate;
+	local env = getsenv(animate);
+	assert(type(env) == "table", "Did not return a table for Character.Animate (a " .. animate.ClassName .. ")");
+	assert(env.script == animate, "The script global is not identical to Character.Animate");
+end);
+test("getstack", {}, function()
+	local _ = "a" .. "b";
+	assert(debug.getstack(1, 1) == "ab", "The first item in the stack should be 'ab'");
+	assert((debug.getstack(1))[1] == "ab", "The first item in the stack table should be 'ab'");
+end);
+test("getthreadidentity", {
+	"getidentity",
+	"getthreadcontext"
+}, function()
+	assert(type(getthreadidentity()) == "number", "Did not return a number");
+end);
+test("identifyexecutor", {
+	"getexecutorname"
+}, function()
+	local name, version = identifyexecutor();
+	assert(type(name) == "string", "Did not return a string for the name");
+	assert(type(version) == "string", "Did not return a string for the version");
+	return name .. " " .. version;
+end);
+test("isfile", {}, function()
+	writefile(".tests/isfile.txt", "success");
+	assert(isfile(".tests/isfile.txt") == true, "Did not return true for a file");
+	assert(isfile(".tests") == false, "Did not return false for a folder");
+	assert(isfile(".tests/doesnotexist.exe") == false, "Did not return false for a nonexistent path (got " .. tostring(isfile(".tests/doesnotexist.exe")) .. ")");
+end);
+test("isfolder", {}, function()
+	assert(isfolder(".tests") == true, "Did not return false for a folder");
+	assert(isfolder(".tests/doesnotexist.exe") == false, "Did not return false for a nonexistent path (got " .. tostring(isfolder(".tests/doesnotexist.exe")) .. ")");
+end);
+test("isrbxactive", {
+	"isgameactive"
+}, function()
+	assert(type(isrbxactive()) == "boolean", "Did not return a boolean value");
+end);
+test("isreadonly", {}, function()
+	local object = {};
+	table.freeze(object);
+	assert(isreadonly(object), "Did not return true for a read-only table");
+end);
+test("isrenderobj", {}, function()
+	local drawing = Drawing.new("Image");
+	drawing.Visible = true;
+	assert(isrenderobj(drawing) == true, "Did not return true for an Image");
+	assert(isrenderobj(newproxy()) == false, "Did not return false for a blank table");
+end);
+test("iscclosure", {}, function()
+	assert(iscclosure(print) == true, "Function 'print' should be a C closure");
+	assert(iscclosure(function()
+	end) == false, "Executor function should not be a C closure");
+end);
+test("isexecutorclosure", {
+	"checkclosure",
+	"isourclosure"
+}, function()
+	assert(isexecutorclosure(isexecutorclosure) == true, "Did not return true for an executor global");
+	assert(isexecutorclosure(newcclosure(function()
+	end)) == true, "Did not return true for an executor C closure");
+	assert(isexecutorclosure(function()
+	end) == true, "Did not return true for an executor Luau closure");
+	assert(isexecutorclosure(print) == false, "Did not return false for a Roblox global");
+end);
+test("islclosure", {}, function()
+	assert(islclosure(print) == false, "Function 'print' should not be a Lua closure");
+	assert(islclosure(function()
+	end) == true, "Executor function should be a Lua closure");
+end);
+test("isscriptable", {}, function()
+	local fire = Instance.new("Fire");
+	assert(isscriptable(fire, "size_xml") == false, "Did not return false for a non-scriptable property (size_xml)");
+	assert(isscriptable(fire, "Size") == true, "Did not return true for a scriptable property (Size)");
+end);
+test("listfiles", {}, function()
+	makefolder(".tests/listfiles");
+	writefile(".tests/listfiles/test_1.txt", "success");
+	writefile(".tests/listfiles/test_2.txt", "success");
+	local files = listfiles(".tests/listfiles");
+	assert(#files == 2, "Did not return the correct number of files");
+	assert(isfile(files[1]), "Did not return a file path");
+	assert(readfile(files[1]) == "success", "Did not return the correct files");
+	makefolder(".tests/listfiles_2");
+	makefolder(".tests/listfiles_2/test_1");
+	makefolder(".tests/listfiles_2/test_2");
+	local folders = listfiles(".tests/listfiles_2");
+	assert(#folders == 2, "Did not return the correct number of folders");
+	assert(isfolder(folders[1]), "Did not return a folder path");
+end);
+test("loadfile", {}, function()
+	writefile(".tests/loadfile.txt", "return ... + 1");
+	local callbackf, err = loadfile(".tests/loadfile.txt");
+	assert(type(callbackf) == "function", "loadfile must return a function for a valid chunk (err: " .. tostring(err) .. ")");
+	assert(callbackf(1) == 2, "Failed to load a file with arguments");
+	writefile(".tests/loadfile.txt", "return 'ok'");
+	local callback2, err2 = loadfile(".tests/loadfile.txt");
+	assert(type(callback2) == "function", "loadfile must return a function for a second valid chunk (err: " .. tostring(err2) .. ")");
+	assert(callback2() == "ok", "loadfile returned an unexpected function result for a valid chunk");
+end);
+test("loadstring", {}, function()
+	local animate = (__betterGetService("Players")).LocalPlayer.Character.Animate;
+	local bytecode = getscriptbytecode(animate);
+	local func = loadstring(bytecode);
+	assert(type(func) ~= "function", "Luau bytecode should not be loadable");
+	local mathFn, err = loadstring("return ... + 1");
+	assert(type(mathFn) == "function", "loadstring must return a function for a valid chunk (err: " .. tostring(err) .. ")");
+	assert(mathFn(1) == 2, "Failed to do simple math");
+end);
+test("lz4compress", {}, function()
+	local raw = "Hello, world!";
+	local compressed = lz4compress(raw);
+	assert(type(compressed) == "string", "Compression did not return a string");
+	assert(lz4decompress(compressed, #raw) == raw, "Decompression did not return the original string");
+end);
+test("lz4decompress", {}, function()
+	local raw = "Hello, world!";
+	local compressed = lz4compress(raw);
+	assert(type(compressed) == "string", "Compression did not return a string");
+	assert(lz4decompress(compressed, #raw) == raw, "Decompression did not return the original string");
+end);
+test("makefolder", {}, function()
+	makefolder(".tests/makefolder");
+	assert(isfolder(".tests/makefolder"), "Did not create the folder");
+end);
+test("messagebox", {}, function()
+	if IsOnMobile then
+		return "Mobile / touch-only device, skipping messagebox test";
+	end;
+	print("UNC: A messagebox will appear. Click 'OK' to continue the UNC test.");
+	local ok, res = pcall(messagebox, "UNC_TEST_MESSAGEBOX", "UNC UNC_TEST", 0);
+	assert(ok, res or "messagebox errored");
+	local t = type(res);
+	assert(t == "number" or t == "nil", "messagebox must return button id (number) or nil");
+	messageboxPassed = true;
+end, true, 45);
+test("mouse1click", {}, function()
+	local ok1, err1 = pcall(mouse1click);
+	local ok2, err2 = pcall(mouse1click);
+	assert(ok1 and ok2, err1 or err2 or "mouse1click errored");
+end);
+test("mouse1press", {}, function()
+	local ok1, err1 = pcall(mouse1press);
+	local ok2, err2 = pcall(mouse1release);
+	assert(ok1 and ok2, err1 or err2 or "mouse1press/mouse1release errored");
+end);
+test("mouse1release", {}, function()
+	local ok, err = pcall(mouse1release);
+	assert(ok, err or "mouse1release errored");
+end);
+test("mouse2click", {}, function()
+	local ok1, err1 = pcall(mouse2click);
+	local ok2, err2 = pcall(mouse2click);
+	assert(ok1 and ok2, err1 or err2 or "mouse2click errored");
+end);
+test("mouse2press", {}, function()
+	local ok1, err1 = pcall(mouse2press);
+	local ok2, err2 = pcall(mouse2release);
+	assert(ok1 and ok2, err1 or err2 or "mouse2press/mouse2release errored");
+end);
+test("mouse2release", {}, function()
+	local ok, err = pcall(mouse2release);
+	assert(ok, err or "mouse2release errored");
+end);
+test("mousemoveabs", {}, function()
+	local ok1, err1 = pcall(mousemoveabs, 0, 0);
+	local ok2, err2 = pcall(mousemoveabs, 100, 100);
+	assert(ok1 and ok2, err1 or err2 or "mousemoveabs errored");
+end);
+test("mousemoverel", {}, function()
+	local ok1, err1 = pcall(mousemoverel, 0, 0);
+	local ok2, err2 = pcall(mousemoverel, 10, -10);
+	assert(ok1 and ok2, err1 or err2 or "mousemoverel errored");
+end);
+test("mousescroll", {}, function()
+	local ok1, err1 = pcall(mousescroll, 1);
+	local ok2, err2 = pcall(mousescroll, -1);
+	assert(ok1 and ok2, err1 or err2 or "mousescroll errored");
+end);
+test("newcclosure", {}, function()
+	local function testf()
+		return true;
+	end;
+	local testC = newcclosure(testf);
+	assert(testf() == testC(), "New C closure should return the same value as the original");
+	assert(testf ~= testC, "New C closure should not be same as the original");
+	assert(iscclosure(testC), "New C closure should be a C closure");
+end);
+test("queue_on_teleport", {
+	"queueonteleport"
+}, function()
+	local ok, err = pcall(queue_on_teleport, "return 1");
+	assert(ok, err or "queue_on_teleport errored");
+end);
+test("rconsoleclear", {
+	"consoleclear"
+}, nil, true);
+test("rconsolecreate", {
+	"consolecreate"
+}, nil, true);
+test("rconsoledestroy", {
+	"consoledestroy"
+}, nil, true);
+test("rconsoleinput", {
+	"consoleinput"
+}, nil, true);
+test("rconsoleprint", {
+	"consoleprint"
+}, nil, true);
+test("rconsolesettitle", {
+	"rconsolename",
+	"consolesettitle"
+}, nil, true);
+test("writefile", {}, function()
+	writefile(".tests/writefile.txt", "UNC_WRITEFILE_TEST");
+	assert(readfile(".tests/writefile.txt") == "UNC_WRITEFILE_TEST", "writefile did not persist exact file contents");
+end);
+test("readfile", {}, function()
+	writefile(".tests/readfile.txt", "success");
+	assert(readfile(".tests/readfile.txt") == "success", "Did not return the contents of the file");
+end);
+test("request", {
+	"http.request",
+	"http_request"
+}, function()
+	local hs = __betterGetService("HttpService");
+	local function basic()
+		local res = request({
+			Url = "https://httpbin.org/user-agent",
+			Method = "GET"
+		});
+		assert(type(res) == "table", "Response must be a table");
+		assert(type(res.Success) == "boolean", "Response.Success must be a boolean");
+		assert(res.Success == true, "Response.Success should be true for a 200 response");
+		assert(res.StatusCode == 200, "Did not return a 200 status code");
+		assert(type(res.StatusMessage) == "string", "Response.StatusMessage must be a string");
+		assert(type(res.Headers) == "table", "Response.Headers must be a table");
+		assert(type(res.Body) == "string", "Response.Body must be a string");
+		local data = hs:JSONDecode(res.Body);
+		assert(type(data) == "table" and data["user-agent"] ~= nil, "Did not return a table with a user-agent key (can be empty string)");
+		return data["user-agent"];
+	end;
+	local uaDefault = basic();
+	local okCustom, res2 = pcall(request, {
+		Url = "https://httpbin.org/user-agent",
+		Method = "GET",
+		Headers = {
+			["User-Agent"] = "UNC_TEST_AGENT"
+		}
+	});
+	if not okCustom or type(res2) ~= "table" or res2.StatusCode ~= 200 then
+		return "Basic request OK; custom User-Agent unsupported or blocked";
+	end;
+	assert(type(res2.Success) == "boolean", "Custom request Response.Success must be a boolean");
+	assert(type(res2.StatusMessage) == "string", "Custom request Response.StatusMessage must be a string");
+	assert(type(res2.Headers) == "table", "Custom request Response.Headers must be a table");
+	assert(type(res2.Body) == "string", "Custom request Response.Body must be a string");
+	local data2 = hs:JSONDecode(res2.Body);
+	if type(data2) ~= "table" or type(data2["user-agent"]) ~= "string" then
+		return "Basic request OK; custom User-Agent behavior unknown";
+	end;
+	if data2["user-agent"]:find("UNC_TEST_AGENT", 1, true) then
+		return "User-Agent: default=" .. tostring(uaDefault) .. " custom=" .. data2["user-agent"];
+	else
+		return "Basic request OK; custom User-Agent overridden: " .. data2["user-agent"];
+	end;
+end);
+test("setclipboard", {
+	"toclipboard"
+}, function()
+	local ok, err = pcall(setclipboard, "UNC_TEST_CLIPBOARD");
+	assert(ok, err or "setclipboard errored");
+end);
+test("setfpscap", {}, function()
+	local rs = (__betterGetService("RunService")).RenderStepped;
+	local function measure()
+		rs:Wait();
+		local sum = 0;
+		local n = 10;
+		for i = 1, n do
+			sum += 1 / rs:Wait();
+		end;
+		return math.round(sum / n);
+	end;
+	setfpscap(60);
+	local fps60 = measure();
+	setfpscap(240);
+	local fps240 = measure();
+	setfpscap(0);
+	local fps0 = measure();
+	assert(fps60 > 0 and fps240 > 0 and fps0 > 0, "FPS samples invalid");
+	local uncappedHigher = fps0 > fps240;
+	local msg = "60=" .. fps60 .. "fps, 240=" .. fps240 .. "fps, uncapped=" .. fps0 .. "fps";
+	if fps0 > 240 then
+		msg = msg .. " • uncapped > 240";
+	elseif uncappedHigher then
+		msg = msg .. " • uncapped > 240 cap not confirmed (but higher than 240 cap)";
+	else
+		msg = msg .. " • environment appears capped (vsync or executor limitation)";
+	end;
+	return msg;
+end);
+test("sethiddenproperty", {}, function()
+	local fire = Instance.new("Fire");
+	local hidden = sethiddenproperty(fire, "size_xml", 10);
+	assert(hidden, "Did not return true for the hidden property");
+	assert(gethiddenproperty(fire, "size_xml") == 10, "Did not set the hidden property");
+end);
+test("setrbxclipboard", {}, function()
+	local ok, err = pcall(setrbxclipboard, "UNC_TEST_RBXCLIP");
+	assert(ok, err or "setrbxclipboard errored");
+end);
+test("setrawmetatable", {}, function()
+	local object = setmetatable({}, {
+		__index = function()
+			return false;
+		end,
+		__metatable = "Locked!"
+	});
+	local objectReturned = setrawmetatable(object, {
+		__index = function()
+			return true;
+		end
+	});
+	assert(object, "Did not return the original object");
+	assert(object.test == true, "Failed to change the metatable");
+	if objectReturned then
+		return objectReturned == object and "Returned the original object" or "Did not return the original object";
+	end;
+end);
+test("setreadonly", {}, function()
+	local object = {
+		success = false
+	};
+	table.freeze(object);
+	setreadonly(object, false);
+	object.success = true;
+	assert(object.success, "Did not allow the table to be modified");
+end);
+test("setscriptable", {}, function()
+	local fire = Instance.new("Fire");
+	local wasScriptable = setscriptable(fire, "size_xml", true);
+	assert(wasScriptable == false, "Did not return false for a non-scriptable property (size_xml)");
+	assert(isscriptable(fire, "size_xml") == true, "Did not set the scriptable property");
+	fire = Instance.new("Fire");
+	assert(isscriptable(fire, "size_xml") == false, "⚠️⚠️ setscriptable persists between unique instances ⚠️⚠️");
+end);
+test("setthreadidentity", {
+	"setidentity",
+	"setthreadcontext"
+}, function()
+	setthreadidentity(3);
+	assert(getthreadidentity() == 3, "Did not set the thread identity");
+end);
+test("getactors", {}, function()
+	local ok, acts = pcall(getactors);
+	assert(ok, "getactors threw: " .. tostring(acts));
+	assert(type(acts) == "table", "getactors must return a table");
+	if not acts[1] then
+		return "getactors returned an empty table (no initialized Actors yet)";
+	end;
+	assert(typeof(acts[1]) == "Instance" and acts[1]:IsA("Actor"), "First item from getactors is not an Actor");
+end);
+test("getregistry", {
+	"getreg"
+}, function()
+	local r = getregistry();
+	assert(type(r) == "table", "getregistry must return a table");
+	assert(r[1] ~= nil, "getregistry returned empty or non-indexable table");
+end);
+test("getscriptclosure", {}, function()
+	local plrs = __betterGetService("Players");
+	local lp = plrs.LocalPlayer;
+	if not lp then
+		return "LocalPlayer missing; cannot test getscriptclosure";
+	end;
+	local char = lp.Character or lp.CharacterAdded:Wait();
+	local scr = char:FindFirstChildOfClass("LocalScript");
+	if not scr then
+		return "No LocalScript on character; cannot test getscriptclosure";
+	end;
+	local f = getscriptclosure(scr);
+	assert(type(f) == "function", "getscriptclosure did not return a function");
+	local env = getsenv(scr);
+	assert(type(env) == "table", "getsenv did not return a table");
+	assert(env.script == scr, "getsenv().script mismatch with target script");
+	return "Got closure for " .. scr.Name;
+end, true);
+test("decompile", {}, function()
+	local plrs = __betterGetService("Players");
+	local lp = plrs.LocalPlayer;
+	if not lp then
+		return "LocalPlayer missing; cannot test decompile";
+	end;
+	local char = lp.Character or lp.CharacterAdded:Wait();
+	local scr = char:FindFirstChildOfClass("LocalScript") or char:FindFirstChild("Animate");
+	if not scr or (not scr:IsA("LocalScript")) then
+		return "No suitable LocalScript to decompile";
+	end;
+	local ok, out = pcall(decompile, scr);
+	assert(ok, out or "decompile errored");
+	assert(type(out) == "string", "decompile did not return a string");
+	assert(#out > 0, "decompile returned an empty string");
+	return "Decompiled " .. scr.Name .. " (" .. #out .. " chars)";
+end, true);
+test("run_on_actor", {
+	"runonactor"
+}, function()
+	if typeof(getactors) ~= "function" then
+		return "getactors missing; cannot test run_on_actor";
+	end;
+	local okA, acts = pcall(getactors);
+	if not okA or type(acts) ~= "table" or (not acts[1]) then
+		return "getactors returned no usable Actor; cannot test run_on_actor";
+	end;
+	local act = acts[1];
+	if typeof(act) ~= "Instance" or (not act:IsA("Actor")) then
+		return "getactors[1] is not an Actor";
+	end;
+	local rp = __betterGetService("ReplicatedStorage");
+	local flag = Instance.new("BoolValue");
+	flag.Name = "UNC_ACTOR_TEST";
+	flag.Value = false;
+	flag.Parent = rp;
+	local src = "local rp = __betterGetService(\"ReplicatedStorage\")\nlocal v = rp:FindFirstChild(\"UNC_ACTOR_TEST\")\nif v then\n\tv.Value = true\nend\n";
+	local ok, err = pcall(run_on_actor, act, src);
+	assert(ok, err or "run_on_actor errored");
+	local rs = __betterGetService("RunService");
+	local t0 = tick();
+	while tick() - t0 < 5 do
+		if flag.Value then
+			break;
+		end;
+		rs.Heartbeat:Wait();
+	end;
+	assert(flag.Value == true, "run_on_actor did not appear to execute code on the actor");
+	flag:Destroy();
+end);
+test("WebSocket", {}, function()
+	assert(type(WebSocket) == "table" or type(WebSocket) == "userdata", "WebSocket must be a table or userdata");
+end);
+test("WebSocket.connect", {}, function()
+	if type(WebSocket) ~= "table" and type(WebSocket) ~= "userdata" then
+		return "WebSocket global is not table/userdata; cannot test connect";
+	end;
+	local types = {
+		Send = "function",
+		Close = "function",
+		OnMessage = {
+			"table",
+			"userdata"
+		},
+		OnClose = {
+			"table",
+			"userdata"
+		}
+	};
+	local urls = {
+		"wss://echo.websocket.events",
+		"ws://echo.websocket.events",
+		"wss://ws.ifelse.io",
+		"wss://stream.binance.com:9443/ws/btcusdt@trade"
+	};
+	local ws;
+	local usedUrl;
+	local lastErr;
+	for _, url in ipairs(urls) do
+		local ok, res = pcall(WebSocket.connect, url);
+		if ok and res then
+			ws = res;
+			usedUrl = url;
+			break;
+		else
+			lastErr = res;
+		end;
+	end;
+	if not ws then
+		return "Unable to connect to any test WebSocket URL (likely blocked): " .. tostring(lastErr);
+	end;
+	for k, v in pairs(types) do
+		if type(v) == "table" then
+			assert(table.find(v, type(ws[k])), "Did not return a " .. table.concat(v, ", ") .. " for " .. k .. " (a " .. type(ws[k]) .. ")");
+		else
+			assert(type(ws[k]) == v, "Did not return a " .. v .. " for " .. k .. " (a " .. type(ws[k]) .. ")");
+		end;
+	end;
+	pcall(function()
+		ws:Close();
+	end);
+	return "Connected to " .. tostring(usedUrl);
+end);
+test("getfpscap", {}, function()
+	local cap = getfpscap();
+	assert(type(cap) == "number", "getfpscap must return a number");
+	assert(cap >= 0, "getfpscap returned a negative value");
+end, true);
+test("getscriptfromthread", {}, function()
+	local co = coroutine.create(function()
+		task.wait(0.1);
+	end);
+	coroutine.resume(co);
+	local ok, scriptObj = pcall(getscriptfromthread, co);
+	assert(ok, scriptObj or "getscriptfromthread errored");
+	assert(scriptObj == nil or typeof(scriptObj) == "Instance", "getscriptfromthread must return Instance or nil");
+end, true);
+test("getfflag", {}, function()
+	local fullName = "FFlagDebugGraphicsPreferD3D11";
+	local shortName = "DebugGraphicsPreferD3D11";
+	local okFull, fullValue = pcall(getfflag, fullName);
+	local okShort, shortValue = pcall(getfflag, shortName);
+	assert(okFull or okShort, "getfflag failed for both full and extension names");
+	if okFull then
+		local tFull = type(fullValue);
+		assert(tFull == "boolean" or tFull == "number" or tFull == "string" or tFull == "nil", "Unexpected full-name getfflag return type: " .. tFull);
+	end;
+	if okShort then
+		local tShort = type(shortValue);
+		assert(tShort == "boolean" or tShort == "number" or tShort == "string" or tShort == "nil", "Unexpected extension-name getfflag return type: " .. tShort);
+	end;
+	if okFull and okShort then
+		return "Supports full + extension flag names";
+	elseif okFull then
+		return "Supports full flag names only";
+	end;
+	return "Supports extension flag names only";
+end, true);
+test("setfflag", {}, function()
+	local fullName = "FFlagDebugGraphicsPreferD3D11";
+	local shortName = "DebugGraphicsPreferD3D11";
+	local flagName = fullName;
+	local okGet, current = pcall(getfflag, flagName);
+	if not okGet then
+		flagName = shortName;
+		okGet, current = pcall(getfflag, flagName);
+	end;
+	assert(okGet, "setfflag test requires getfflag support for probe flag");
+	local function trySet(value)
+		return pcall(setfflag, flagName, value);
+	end;
+	local okSet, err = trySet(current);
+	if not okSet and type(current) == "boolean" then
+		okSet, err = trySet(current and "True" or "False");
+	end;
+	if not okSet and type(current) ~= "string" then
+		okSet, err = trySet(tostring(current));
+	end;
+	assert(okSet, err or "setfflag errored while setting the current value");
+	return "setfflag accepted existing value for " .. flagName;
+end, true);
+test("getobjects", {}, function()
+	local ok, res = pcall(getobjects, "rbxassetid://1");
+	if not ok then
+		return "getobjects exists but external asset request is blocked";
+	end;
+	assert(type(res) == "table", "getobjects must return a table");
+end, true);
+test("isnetworkowner", {}, function()
+	local part = Instance.new("Part");
+	part.Size = Vector3.new(2, 2, 2);
+	part.Anchored = false;
+	part.CanCollide = false;
+	part.Parent = workspace;
+	local ok, res = pcall(isnetworkowner, part);
+	part:Destroy();
+	assert(ok, res or "isnetworkowner errored");
+	assert(type(res) == "boolean", "isnetworkowner must return a boolean");
+end, true);
+test("Drawing.clear", {}, function()
+	local ok, err = pcall(Drawing.clear);
+	assert(ok, err or "Drawing.clear errored");
+end, true);
+local function testResolved(name, aliases, callback, optional, timeoutSec)
+	optional = optional == true;
+	running += 1;
+	task.spawn(function()
+		local resolvedName = name;
+		local resolvedValue = getGlobal(name);
+		if resolvedValue == nil then
+			for _, alias in ipairs(aliases) do
+				local aliasValue = getGlobal(alias);
+				if aliasValue ~= nil then
+					resolvedName = alias;
+					resolvedValue = aliasValue;
+					break;
+				end;
+			end;
+		end;
+		local label = resolvedName == name and name or (name .. " [" .. resolvedName .. "]");
+		if resolvedValue == nil then
+			if optional then
+				optionalMissing += 1;
+				table.insert(list_optional_missing, name);
+				print("⏺️ " .. name .. " • Optional feature not provided");
+			else
+				fails += 1;
+				missing += 1;
+				table.insert(list_missing, name);
+				warn("⛔ " .. label .. " • Global is missing in this environment");
+			end;
+		else
+			local success, message = runCallbackWithTimeout(function()
+				return callback(resolvedValue, resolvedName);
+			end, timeoutSec);
+			if success then
+				passes += 1;
+				table.insert(list_pass, label .. (message and " • " .. message or ""));
+				print("✅ " .. label .. (message and " • " .. message or ""));
+			else
+				fails += 1;
+				local shortError = normalizeError(message);
+				table.insert(list_fail, label .. " - " .. shortError);
+				warn("⛔ " .. label .. " failed: " .. shortError);
+			end;
+		end;
+		local undefinedAliases = {};
+		for _, alias in ipairs(aliases) do
+			if getGlobal(alias) == nil then
+				table.insert(undefinedAliases, alias);
+			end;
+		end;
+		if #undefinedAliases > 0 then
+			undefined += 1;
+			table.insert(list_alias_missing, name .. " -> " .. table.concat(undefinedAliases, ", "));
+			warn("⚠️ Missing alias(es) for " .. name .. ": " .. table.concat(undefinedAliases, ", "));
+		end;
+		running -= 1;
+	end);
+end;
+local function getHttpBody(result)
+	if type(result) == "string" then
+		return result;
+	end;
+	if type(result) == "table" then
+		if type(result.Body) == "string" then
+			return result.Body;
+		end;
+		if type(result.body) == "string" then
+			return result.body;
+		end;
+	end;
+	return nil;
+end;
+local function assertHttpBody(result, label)
+	local body = getHttpBody(result);
+	assert(type(body) == "string" and #body > 0, label .. " did not return a non-empty response body");
+	return body;
+end;
+test("saveinstance", {
+	"save_instance"
+}, nil, true);
+testResolved("restorefunction", {}, function(fn)
+	assert(type(fn) == "function", "restorefunction must be a function");
+	local target = function(n)
+		return n + 1;
+	end;
+	local old = hookfunction(target, function(n)
+		return n + 50;
+	end);
+	assert(target(1) == 51, "hookfunction setup failed for restorefunction");
+	local ok, err = pcall(fn, target);
+	assert(ok, err or "restorefunction errored");
+	assert(target(1) == 2, "restorefunction did not restore the hooked function");
+	assert(old(1) == 2, "hookfunction's returned original function behaved unexpectedly after restore");
+end, true);
+testResolved("replaceclosure", {}, function(fn)
+	assert(type(fn) == "function", "replaceclosure must be a function");
+	local target = function(n)
+		return n + 1;
+	end;
+	local replacement = function(n)
+		return n + 200;
+	end;
+	local ok, result = pcall(fn, target, replacement);
+	assert(ok, result or "replaceclosure errored");
+	if target(1) == 201 then
+		return "Replaced in-place";
+	end;
+	if type(result) == "function" then
+		assert(result(1) == 201, "replaceclosure returned a function with unexpected behavior");
+		return "Returned replacement closure";
+	end;
+	error("replaceclosure did not replace the closure");
+end, true);
+testResolved("cloneclosure", {}, function(fn)
+	assert(type(fn) == "function", "cloneclosure must be a function");
+	local value = 41;
+	local original = function()
+		return value;
+	end;
+	local copy = fn(original);
+	assert(type(copy) == "function", "cloneclosure did not return a function");
+	assert(copy ~= original, "cloneclosure returned the original function");
+	assert(copy() == 41, "cloneclosure copy returned unexpected data");
+end, true);
+testResolved("dumpstring", {}, function(fn)
+	assert(type(fn) == "function", "dumpstring must be a function");
+	local ok, dumped = pcall(fn, "return 123");
+	if not ok then
+		ok, dumped = pcall(fn, function()
+			return 123;
+		end);
+	end;
+	assert(ok, dumped or "dumpstring errored");
+	assert(type(dumped) == "string", "dumpstring must return a string");
+	assert(#dumped > 0, "dumpstring returned an empty string");
+end, true);
+testResolved("getcallstack", {}, function(fn)
+	assert(type(fn) == "function", "getcallstack must be a function");
+	local ok, stack = pcall(fn);
+	if not ok then
+		ok, stack = pcall(fn, 0);
+	end;
+	assert(ok, stack or "getcallstack errored");
+	local stackType = type(stack);
+	assert(stackType == "table" or stackType == "string", "getcallstack returned unexpected type: " .. stackType);
+	return "Returned " .. stackType;
+end, true);
+testResolved("getfunctionhash", {}, function(fn)
+	assert(type(fn) == "function", "getfunctionhash must be a function");
+	local ok, hash = pcall(fn, function()
+		return "UNC_HASH";
+	end);
+	assert(ok, hash or "getfunctionhash errored");
+	assert(type(hash) == "string", "getfunctionhash must return a string");
+	assert(#hash == 96, "getfunctionhash must return a 96-character SHA-384 hex digest");
+	assert(hash:match("^[a-fA-F0-9]+$") ~= nil, "getfunctionhash must return a hex digest");
+end, true);
+testResolved("isluau", {}, function(fn)
+	assert(type(fn) == "function", "isluau must be a function");
+	local result = fn();
+	assert(type(result) == "boolean", "isluau must return a boolean");
+	assert(result == true, "isluau should report true inside Luau");
+end, true);
+testResolved("gethwid", {}, function(fn)
+	assert(type(fn) == "function", "gethwid must be a function");
+	local hwid = fn();
+	assert(type(hwid) == "string", "gethwid must return a string");
+	assert(#hwid > 0, "gethwid returned an empty string");
+end, true);
+testResolved("setnamecallmethod", {}, function(fn)
+	assert(type(fn) == "function", "setnamecallmethod must be a function");
+	local changed = false;
+	local old;
+	old = hookmetamethod(game, "__namecall", function(self, ...)
+		if self == game and (not changed) and getnamecallmethod() == "GetService" then
+			changed = true;
+			local ok, err = pcall(fn, "IsA");
+			assert(ok, err or "setnamecallmethod errored");
+			return old(self, "DataModel");
+		end;
+		return old(self, ...);
+	end);
+	local result = __betterGetService("Lighting");
+	assert(result == true, "setnamecallmethod did not rewrite the active namecall");
+end, true);
+testResolved("getpointerfrominstance", {}, function(fn)
+	assert(type(fn) == "function", "getpointerfrominstance must be a function");
+	local part = Instance.new("Part");
+	local ok, pointer = pcall(fn, part);
+	part:Destroy();
+	assert(ok, pointer or "getpointerfrominstance errored");
+	local pointerType = type(pointer);
+	assert(pointer ~= nil, "getpointerfrominstance returned nil");
+	assert(pointerType == "number" or pointerType == "string" or pointerType == "userdata", "Unexpected pointer type: " .. pointerType);
+end, true);
+testResolved("firetouchtransmitter", {}, function(fn)
+	assert(type(fn) == "function", "firetouchtransmitter must be a function");
+	local plrs = __betterGetService("Players");
+	local lp = plrs.LocalPlayer;
+	if not lp then
+		return "LocalPlayer missing; cannot test firetouchtransmitter";
+	end;
+	local char = lp.Character or lp.CharacterAdded:Wait();
+	local root = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChildWhichIsA("BasePart");
+	if not root then
+		return "No character root part; cannot test firetouchtransmitter";
+	end;
+	local part = Instance.new("Part");
+	part.Size = Vector3.new(4, 4, 4);
+	part.Anchored = true;
+	part.CanCollide = true;
+	part.Position = root.Position + Vector3.new(0, 5000, 0);
+	part.Parent = workspace;
+	local touched = false;
+	part.Touched:Connect(function(hit)
+		if hit == root then
+			touched = true;
+		end;
+	end);
+	local transmitter = part:FindFirstChildOfClass("TouchTransmitter");
+	if transmitter then
+		local ok, err = pcall(fn, transmitter, 0);
+		if not ok then
+			part:Destroy();
+			error(err or "firetouchtransmitter errored when given TouchTransmitter");
+		end;
+		task.wait(0.05);
+		if touched then
+			part:Destroy();
+			return "Triggered via TouchTransmitter";
+		end;
+	end;
+	local ok, err = pcall(fn, root, part, 0);
+	if not ok then
+		part:Destroy();
+		error(err or "firetouchtransmitter errored when given part arguments");
+	end;
+	task.wait(0.05);
+	local ok2, err2 = pcall(fn, root, part, 1);
+	part:Destroy();
+	assert(ok2, err2 or "firetouchtransmitter release errored");
+	if touched then
+		return "Triggered via part arguments";
+	end;
+	return "Call succeeded; touch event was not observed";
+end, true);
+testResolved("getspecialinfo", {}, function(fn)
+	assert(type(fn) == "function", "getspecialinfo must be a function");
+	local mesh = Instance.new("SpecialMesh");
+	local info = fn(mesh);
+	assert(type(info) == "table", "getspecialinfo must return a table");
+end, true);
+testResolved("readbinarystring", {}, function(fn)
+	assert(type(fn) == "function", "readbinarystring must be a function");
+	local part = Instance.new("Part");
+	part:SetAttribute("UNCBinaryProbe", true);
+	local ok, value = pcall(fn, part, "AttributesSerialize");
+	if not ok then
+		ok, value = pcall(fn, part, "Tags");
+	end;
+	part:Destroy();
+	assert(ok, value or "readbinarystring errored");
+	assert(type(value) == "string", "readbinarystring must return a string");
+end, true);
+testResolved("gethostenv", {}, function(fn)
+	assert(type(fn) == "function", "gethostenv must be a function");
+	local env = fn();
+	assert(type(env) == "table", "gethostenv must return a table");
+	assert(env ~= nil, "gethostenv returned nil");
+	if env.game ~= nil then
+		assert(env.game == game, "gethostenv().game did not match the global game");
+	end;
+end, true);
+testResolved("http", {}, function(value)
+	assert(type(value) == "table", "http must be a table");
+	local requestFn = value.request or value.Request;
+	if type(requestFn) == "function" then
+		local ok, result = pcall(requestFn, {
+			Url = "https://httpbin.org/get",
+			Method = "GET"
+		});
+		if not ok then
+			ok, result = pcall(requestFn, value, {
+				Url = "https://httpbin.org/get",
+				Method = "GET"
+			});
+		end;
+		assert(ok, result or "http.request errored");
+		assertHttpBody(result, "http.request");
+		return "Used http.request";
+	end;
+	local getFn = value.get or value.Get;
+	assert(type(getFn) == "function", "http table does not expose request/get");
+	local ok, result = pcall(getFn, "https://httpbin.org/get");
+	if not ok then
+		ok, result = pcall(getFn, value, "https://httpbin.org/get");
+	end;
+	assert(ok, result or "http.get errored");
+	assertHttpBody(result, "http.get");
+	return "Used http.get";
+end, true);
+testResolved("http.get", {}, function(fn)
+	assert(type(fn) == "function", "http.get must be a function");
+	local ok, result = pcall(fn, "https://httpbin.org/get");
+	assert(ok, result or "http.get errored");
+	local body = assertHttpBody(result, "http.get");
+	assert(body:find("httpbin", 1, true) ~= nil or body:find("\"url\"", 1, true) ~= nil, "http.get response body did not look like a real HTTP response");
+end, true);
+testResolved("http.post", {}, function(fn)
+	assert(type(fn) == "function", "http.post must be a function");
+	local ok, result = pcall(fn, "https://httpbin.org/post", "UNC_TEST=1", "application/x-www-form-urlencoded");
+	if not ok then
+		ok, result = pcall(fn, "https://httpbin.org/post", "UNC_TEST=1");
+	end;
+	assert(ok, result or "http.post errored");
+	local body = assertHttpBody(result, "http.post");
+	assert(body:find("UNC_TEST", 1, true) ~= nil or body:find("\"form\"", 1, true) ~= nil, "http.post response body did not include posted data");
+end, true);
+task.defer(function()
+	repeat
+		task.wait();
+	until running == 0;
+	local function sortList(t)
+		table.sort(t, function(a, b)
+			return a < b;
+		end);
+	end;
+	sortList(list_pass);
+	sortList(list_fail);
+	sortList(list_exists_only);
+	sortList(list_missing);
+	sortList(list_alias_missing);
+	sortList(list_optional_missing);
+	local testedTotal = passes + fails;
+	local rate = testedTotal > 0 and math.round(passes / testedTotal * 100) or 0;
+	local outOf = passes .. " out of " .. testedTotal;
+	print("\nUNC Summary");
+	print("✅ Passes: " .. passes);
+	print("⛔ Fails: " .. fails);
+	print("⏺️ Exists but untested: " .. existsOnly);
+	print("❌ Missing required globals: " .. missing);
+	print("⏺️ Missing optional globals: " .. optionalMissing);
+	print("⚠️ Globals with missing aliases: " .. undefined);
+	print("Tested success rate: " .. rate .. "% (" .. outOf .. ")\n");
+	local verdict;
+	if testedTotal == 0 then
+		verdict = "No UNC functions were actually tested. Almost everything is missing.";
+	elseif rate >= 90 and fails == 0 and missing == 0 then
+		verdict = "Excellent UNC compatibility: almost everything matches and behaves correctly.";
+	elseif rate >= 80 and fails == 0 then
+		verdict = "Very good UNC compatibility: core features behave correctly, some globals or aliases missing.";
+	elseif rate >= 60 then
+		verdict = "Decent UNC compatibility: usable, but several functions are missing or behave differently.";
+	elseif rate >= 30 then
+		verdict = "Poor UNC compatibility: many UNC features fail or are missing.";
+	else
+		verdict = "Very bad UNC compatibility: this environment barely matches UNC.";
+	end;
+	print("Verdict: " .. verdict .. "\n");
+	if #list_missing > 0 then
+		print("❌ Completely missing required globals:");
+		print("  " .. table.concat(list_missing, ", "));
+		print("");
+	end;
+	if #list_optional_missing > 0 then
+		print("⏺️ Missing optional (executor-specific) globals:");
+		print("  " .. table.concat(list_optional_missing, ", "));
+		print("");
+	end;
+end);
+local function runRcon()
+	local lp, lf = 0, 0;
+	local function dropExist(n)
+		for i, v in ipairs(list_exists_only) do
+			if v == n then
+				table.remove(list_exists_only, i);
+				existsOnly -= 1;
+				break;
+			end;
+		end;
+	end;
+	local defs = {
+		{
+			n = "rconsolecreate",
+			a = {
+				"consolecreate"
+			},
+			f = function(fn)
+				local ok, err = pcall(fn, "UNC_TEST");
+				assert(ok, err or "rconsolecreate errored");
+			end
+		},
+		{
+			n = "rconsolesettitle",
+			a = {
+				"rconsolename",
+				"consolesettitle"
+			},
+			f = function(fn)
+				local ok, err = pcall(fn, "UNC_UNC");
+				assert(ok, err or "rconsolesettitle errored");
+			end
+		},
+		{
+			n = "rconsoleprint",
+			a = {
+				"consoleprint"
+			},
+			f = function(fn)
+				local ok, err = pcall(fn, "UNC rconsoleprint test\n");
+				assert(ok, err or "rconsoleprint errored");
+			end
+		},
+		{
+			n = "rconsoleclear",
+			a = {
+				"consoleclear"
+			},
+			f = function(fn)
+				local ok, err = pcall(fn);
+				assert(ok, err or "rconsoleclear errored");
+			end
+		},
+		{
+			n = "rconsoledestroy",
+			a = {
+				"consoledestroy"
+			},
+			f = function(fn)
+				local ok, err = pcall(fn);
+				assert(ok, err or "rconsoledestroy errored");
+			end
+		},
+		{
+			n = "rconsolewarn",
+			a = {
+				"consolewarn"
+			},
+			f = function(fn)
+				local ok, err = pcall(fn, "UNC rconsolewarn test\n");
+				assert(ok, err or "rconsolewarn errored");
+			end
+		},
+		{
+			n = "rconsoleerr",
+			a = {
+				"consoleerr"
+			},
+			f = function(fn)
+				local ok, err = pcall(fn, "UNC rconsoleerr test\n");
+				assert(ok, err or "rconsoleerr errored");
+			end
+		}
+	};
+	print("UNC rconsole tests: starting");
+	for _, d in ipairs(defs) do
+		local fn;
+		local names = {
+			d.n
+		};
+		for _, al in ipairs(d.a) do
+			table.insert(names, al);
+		end;
+		for _, nm in ipairs(names) do
+			local g = getGlobal(nm);
+			if type(g) == "function" then
+				fn = g;
+				break;
+			end;
+		end;
+		if fn then
+			dropExist(d.n);
+			local ok, msg = pcall(d.f, fn);
+			if ok then
+				lp += 1;
+				passes += 1;
+				table.insert(list_pass, d.n);
+				print("✅ [rconsole] " .. d.n);
+			else
+				lf += 1;
+				fails += 1;
+				local e = d.n .. " - " .. normalizeError(msg);
+				table.insert(list_fail, e);
+				warn("⛔ [rconsole] " .. e);
+			end;
+		end;
+	end;
+	print("UNC rconsole tests: " .. lp .. " passes, " .. lf .. " fails");
+	local testedTotal = passes + fails;
+	local rate = testedTotal > 0 and math.round(passes / testedTotal * 100) or 0;
+	local outOf = passes .. " out of " .. testedTotal;
+	print("\nUNC Summary (after rconsole)");
+	print("✅ Passes: " .. passes);
+	print("⛔ Fails: " .. fails);
+	print("⏺️ Exists but untested: " .. existsOnly);
+	print("❌ Missing required globals: " .. missing);
+	print("⏺️ Missing optional globals: " .. optionalMissing);
+	print("⚠️ Globals with missing aliases: " .. undefined);
+	print("Tested success rate: " .. rate .. "% (" .. outOf .. ")\n");
+	local verdict;
+	if testedTotal == 0 then
+		verdict = "No UNC functions were actually tested. Almost everything is missing.";
+	elseif rate >= 90 and fails == 0 and missing == 0 then
+		verdict = "Excellent UNC compatibility: almost everything matches and behaves correctly.";
+	elseif rate >= 80 and fails == 0 then
+		verdict = "Very good UNC compatibility: core features behave correctly, some globals or aliases missing.";
+	elseif rate >= 60 then
+		verdict = "Decent UNC compatibility: usable, but several functions are missing or behave differently.";
+	elseif rate >= 30 then
+		verdict = "Poor UNC compatibility: many UNC features fail or are missing.";
+	else
+		verdict = "Very bad UNC compatibility: this environment barely matches UNC.";
+	end;
+	print("Verdict: " .. verdict .. "\n");
+end;
+local function promptRcon()
+	local has = getGlobal("rconsoleclear") or getGlobal("rconsolecreate") or getGlobal("rconsoleprint") or getGlobal("rconsolesettitle") or getGlobal("consoleclear") or getGlobal("consolecreate") or getGlobal("consoleprint") or getGlobal("consolesettitle");
+	if not has then
+		return;
+	end;
+	local sg = __betterGetService("StarterGui");
+	local bf = Instance.new("BindableFunction");
+	bf.OnInvoke = function(ans)
+		if ans == "Sure" then
+			runRcon();
+		end;
+	end;
+	pcall(function()
+		sg:SetCore("SendNotification", {
+			Title = "UNC rconsole tests",
+			Text = "Some executors can crash when rconsole is used.\nRun extra rconsole tests?",
+			Duration = math.huge,
+			Button1 = "Sure",
+			Button2 = "Nah",
+			Callback = bf
+		});
+	end);
+end;
+task.spawn(function()
+	repeat
+		task.wait();
+	until running == 0;
+	if messageboxPassed then
+		promptRcon();
+	end;
+end);
