@@ -1,0 +1,416 @@
+-- Open Source
+game:GetService("TextChatService").TextChannels.RBXGeneral:SendAsync("-rs")
+task.wait(2)
+game:GetService("TextChatService").TextChannels.RBXGeneral:SendAsync("-gh 7583352167 7583370812 5316539421")
+task.wait(2)
+local lp = game:GetService("Players").LocalPlayer
+local hb = game:GetService("RunService").Heartbeat
+local rs = game:GetService("RunService")
+local uis = game:GetService("UserInputService")
+local gen = game:GetService("TextChatService").TextChannels.RBXGeneral
+
+local char = lp.Character
+char.Archivable = true
+
+local parts = {}
+local cloneparts = {}
+local nebulablade = nil
+local vectorarrow = nil
+local sword = nil
+local isNebulaFlying = false
+
+for _,v in pairs(char:GetDescendants()) do
+    if v:IsA("BasePart") then table.insert(parts,v) end
+    if v:IsA("Accessory") then
+        local handle = v:FindFirstChild("Handle")
+        if handle then
+            local mesh = handle:FindFirstChildOfClass("SpecialMesh")
+            if mesh then
+                if mesh.MeshId:find("7535284433") then
+                    nebulablade = handle
+                    nebulablade:BreakJoints()
+                    for _, obj in pairs(nebulablade:GetChildren()) do
+                        if obj:IsA("Weld") or obj:IsA("ManualWeld") or obj:IsA("WeldConstraint") then obj:Destroy() end
+                    end
+                    nebulablade.CanCollide = false
+                elseif mesh.MeshId:find("7549103543") then
+                    vectorarrow = handle
+                    vectorarrow:BreakJoints()
+                    for _, obj in pairs(vectorarrow:GetChildren()) do
+                        if obj:IsA("Weld") or obj:IsA("ManualWeld") or obj:IsA("WeldConstraint") then obj:Destroy() end
+                    end
+                    vectorarrow.CanCollide = false
+                elseif mesh.MeshId:find("5278721954") then
+                    sword = handle
+                    sword:BreakJoints()
+                    for _, obj in pairs(sword:GetChildren()) do
+                        if obj:IsA("Weld") or obj:IsA("ManualWeld") or obj:IsA("WeldConstraint") then obj:Destroy() end
+                    end
+                    sword.CanCollide = false
+                end
+            end
+        end
+    end
+end
+
+local clone = char:Clone()
+clone.Name = "reanimate"
+clone.Parent = workspace
+lp.Character = clone
+workspace.CurrentCamera.CameraSubject = clone
+
+for _, v in pairs(clone:GetDescendants()) do
+    if v:IsA("Accessory") then
+        local h = v:FindFirstChild("Handle")
+        if h then
+            h.Transparency = 1
+            for _, mesh in pairs(h:GetDescendants()) do
+                if mesh:IsA("BasePart") or mesh:IsA("Decal") or mesh:IsA("Texture") then mesh.Transparency = 1 end
+            end
+        end
+    end
+end
+
+for _,v in pairs(clone:GetDescendants()) do
+    if v:IsA("BasePart") then table.insert(cloneparts,v) end
+end
+
+char.Humanoid:ChangeState(15)
+
+task.spawn(function()
+    local hrp = clone.HumanoidRootPart
+    for i=1,80 do
+        hrp.Velocity = Vector3.new(0,-35,0)
+        hb:Wait()
+    end
+    gen:SendAsync("-net")
+end)
+
+local hum = clone:WaitForChild("Humanoid")
+local tor = clone:WaitForChild("Torso")
+local root = clone:WaitForChild("HumanoidRootPart")
+local joints = {
+    neck = tor:WaitForChild("Neck"),
+    rs = tor:WaitForChild("Right Shoulder"),
+    ls = tor:WaitForChild("Left Shoulder"),
+    rh = tor:WaitForChild("Right Hip"),
+    lh = tor:WaitForChild("Left Hip"),
+    root = root:WaitForChild("RootJoint")
+}
+
+local function cf(p, r)
+    return CFrame.new(p) * CFrame.fromEulerAnglesXYZ(math.rad(r.X), math.rad(r.Y), math.rad(r.Z))
+end
+
+local currentCFs = {}
+for n, j in pairs(joints) do currentCFs[n] = j.Transform end
+local nebulabladeCF = CFrame.new()
+local vectorarrowCF = CFrame.new()
+local swordCF = CFrame.new()
+local lerpSpeed = 0.1
+
+uis.InputBegan:Connect(function(input, gpe)
+    if gpe then return end
+    if input.KeyCode == Enum.KeyCode.Q then
+        isNebulaFlying = not isNebulaFlying
+        if isNebulaFlying then
+            hum.WalkSpeed = 60
+            hum.JumpPower = 0
+            hum:SetStateEnabled(Enum.HumanoidStateType.Jumping, false)
+            hum:SetStateEnabled(Enum.HumanoidStateType.Climbing, false)
+            hum:SetStateEnabled(Enum.HumanoidStateType.Seated, false)
+        else
+            hum.WalkSpeed = 30
+            hum.JumpPower = 65
+            hum:SetStateEnabled(Enum.HumanoidStateType.Jumping, true)
+            hum:SetStateEnabled(Enum.HumanoidStateType.Climbing, true)
+            hum:SetStateEnabled(Enum.HumanoidStateType.Seated, true)
+        end
+    end
+end)
+
+rs.Stepped:Connect(function()
+    local state = "idle"
+    local vel = tor.Velocity.Magnitude
+    local hState = hum:GetState()
+    
+    local moveDir = root.CFrame:VectorToObjectSpace(hum.MoveDirection)
+    local forward = moveDir.Z < -0.1
+    local backward = moveDir.Z > 0.1
+    local left = moveDir.X < -0.1
+    local right = moveDir.X > 0.1
+
+    if not isNebulaFlying then
+        if hState == Enum.HumanoidStateType.Climbing then state = "climb"
+        elseif hState == Enum.HumanoidStateType.Freefall then state = "fall"
+        elseif hState == Enum.HumanoidStateType.Jumping then state = "jump"
+        elseif hState == Enum.HumanoidStateType.Seated then state = "sit"
+        elseif vel > 0.1 then
+            if forward then state = "walkW"
+            elseif backward then state = "walkS"
+            elseif left then state = "walkA"
+            elseif right then state = "walkD"
+            else state = "walkW" end
+        end
+    else
+        if vel > 0.1 then
+            if forward then state = "nebula_walkW"
+            elseif backward then state = "nebula_walkS"
+            elseif left then state = "nebula_walkA"
+            elseif right then state = "nebula_walkD"
+            else state = "nebula_walkW" end
+        else 
+            state = "nebula_idle" 
+        end
+    end
+
+    local targets = {}
+    local nebulablade_data = {pos = Vector3.new(0,0,0), rot = Vector3.new(0,0,0)}
+    local vectorarrow_data = {pos = Vector3.new(0,0,0), rot = Vector3.new(0,0,0)}
+    local sword_data = {pos = Vector3.new(0,0,0), rot = Vector3.new(0,0,0)}
+    local rotCont = (tick() * 350) % 360
+    
+    if state == "idle" then
+        local s = math.sin(tick() * 2) * 5
+        targets.root = cf(Vector3.new(0, 0, 0), Vector3.new(0, 0, 0))
+        targets.neck = cf(Vector3.new(0, 0, 0), Vector3.new(15, 0, 0))
+        targets.rs = cf(Vector3.new(0, 0, 0), Vector3.new(80, 60+s, s))
+        targets.ls = cf(Vector3.new(0, 0, 0), Vector3.new(80, -60+s, s))
+        targets.rh = cf(Vector3.new(0, 0, 0), Vector3.new(-15, s, 15+s))
+        targets.lh = cf(Vector3.new(0, 0, 0), Vector3.new(-15, s, 15+s))
+        nebulablade_data.pos = Vector3.new(0, 2, 2)
+        nebulablade_data.rot = Vector3.new(0, 0, rotCont)
+        vectorarrow_data.pos = Vector3.new(0, 1, 1)
+        vectorarrow_data.rot = Vector3.new(0, 0, -rotCont)
+        sword_data.pos = Vector3.new(0, 0, 0.5)
+        sword_data.rot = Vector3.new(0, 90, 0)
+    elseif state == "walkW" then
+        local s = math.sin(tick() * 6) * 45
+        targets.root = cf(Vector3.new(0, 0, 0), Vector3.new(20, 0, 0))
+        targets.neck = cf(Vector3.new(0, 0, 0), Vector3.new(15, 0, 0))
+        targets.rs = cf(Vector3.new(0, 0, 0), Vector3.new(-5, 0, s))
+        targets.ls = cf(Vector3.new(0, 0, 0), Vector3.new(-5, 0, s))
+        targets.rh = cf(Vector3.new(0, 0, 0), Vector3.new(-10, 0, -s))
+        targets.lh = cf(Vector3.new(0, 0, 0), Vector3.new(-10, 0, -s))
+        nebulablade_data.pos = Vector3.new(0, 2, 2)
+        nebulablade_data.rot = Vector3.new(0, 0, rotCont)
+        vectorarrow_data.pos = Vector3.new(0, 1, 1)
+        vectorarrow_data.rot = Vector3.new(0, 0, -rotCont)
+        sword_data.pos = Vector3.new(0, 0, 0.5)
+        sword_data.rot = Vector3.new(0, 90, 0)
+    elseif state == "walkA" then
+        local s = math.sin(tick() * 6) * 45
+        targets.root = cf(Vector3.new(0, 0, 0), Vector3.new(0, 10, 0))
+        targets.neck = cf(Vector3.new(0, 0, 0), Vector3.new(15, 0, 0))
+        targets.rs = cf(Vector3.new(0, 0, 0), Vector3.new(-5, 0, s))
+        targets.ls = cf(Vector3.new(0, 0, 0), Vector3.new(-5, 0, s))
+        targets.rh = cf(Vector3.new(0, 0, 0), Vector3.new(-10, 0, -s))
+        targets.lh = cf(Vector3.new(0, 0, 0), Vector3.new(-10, 0, -s))
+        nebulablade_data.pos = Vector3.new(0, 2, 2)
+        nebulablade_data.rot = Vector3.new(0, 0, rotCont)
+        vectorarrow_data.pos = Vector3.new(0, 1, 1)
+        vectorarrow_data.rot = Vector3.new(0, 0, -rotCont)
+        sword_data.pos = Vector3.new(0, 0, 0.5)
+        sword_data.rot = Vector3.new(0, 90, 0)
+    elseif state == "walkS" then
+        local s = math.sin(tick() * 6) * 45
+        targets.root = cf(Vector3.new(0, 0, 0), Vector3.new(-30, 0, 0))
+        targets.neck = cf(Vector3.new(0, 0, 0), Vector3.new(15, 0, 0))
+        targets.rs = cf(Vector3.new(0, 0, 0), Vector3.new(-5, 0, s))
+        targets.ls = cf(Vector3.new(0, 0, 0), Vector3.new(-5, 0, s))
+        targets.rh = cf(Vector3.new(0, 0, 0), Vector3.new(-10, 0, -s))
+        targets.lh = cf(Vector3.new(0, 0, 0), Vector3.new(-10, 0, -s))
+        nebulablade_data.pos = Vector3.new(0, 2, 2)
+        nebulablade_data.rot = Vector3.new(0, 0, rotCont)
+        vectorarrow_data.pos = Vector3.new(0, 1, 1)
+        vectorarrow_data.rot = Vector3.new(0, 0, -rotCont)
+        sword_data.pos = Vector3.new(0, 0, 0.5)
+        sword_data.rot = Vector3.new(0, 90, 0)
+    elseif state == "walkD" then
+        local s = math.sin(tick() * 6) * 45
+        targets.root = cf(Vector3.new(0, 0, 0), Vector3.new(0, -10, 0))
+        targets.neck = cf(Vector3.new(0, 0, 0), Vector3.new(15, 0, 0))
+        targets.rs = cf(Vector3.new(0, 0, 0), Vector3.new(-5, 0, s))
+        targets.ls = cf(Vector3.new(0, 0, 0), Vector3.new(-5, 0, s))
+        targets.rh = cf(Vector3.new(0, 0, 0), Vector3.new(-10, 0, -s))
+        targets.lh = cf(Vector3.new(0, 0, 0), Vector3.new(-10, 0, -s))
+        nebulablade_data.pos = Vector3.new(0, 2, 2)
+        nebulablade_data.rot = Vector3.new(0, 0, rotCont)
+        vectorarrow_data.pos = Vector3.new(0, 1, 1)
+        vectorarrow_data.rot = Vector3.new(0, 0, -rotCont)
+        sword_data.pos = Vector3.new(0, 0, 0.5)
+        sword_data.rot = Vector3.new(0, 90, 0)
+    elseif state == "jump" then
+        targets.root = cf(Vector3.new(0, 0, 0), Vector3.new(0, 0, 0))
+        targets.rs = cf(Vector3.new(0, 0, 0), Vector3.new(0, 0, 90))
+        targets.ls = cf(Vector3.new(0, 0, 0), Vector3.new(0, 0, -90))
+        nebulablade_data.pos = Vector3.new(0, 2, 2)
+        nebulablade_data.rot = Vector3.new(0, 0, rotCont)
+        vectorarrow_data.pos = Vector3.new(0, 0, -3)
+        vectorarrow_data.rot = Vector3.new(0, 0, -3)
+        sword_data.pos = Vector3.new(0, 0, 0.5)
+        sword_data.rot = Vector3.new(0, 90, 0)
+    elseif state == "fall" then
+        targets.root = cf(Vector3.new(0, 0, 0), Vector3.new(0, 0, 0))
+        targets.neck = cf(Vector3.new(0, 0, 0), Vector3.new(-15, 0, 0))
+        targets.rs = cf(Vector3.new(0, 0, 0), Vector3.new(50, 0, 120))
+        targets.ls = cf(Vector3.new(0, 0, 0), Vector3.new(50, 0, -120))
+        targets.rh = cf(Vector3.new(0.5, 0.5, 0), Vector3.new(-15, 0, -35))
+        targets.lh = cf(Vector3.new(-0.5, 0.5, 0), Vector3.new(-15, 0, 35))
+        nebulablade_data.pos = Vector3.new(0, 4, 2)
+        nebulablade_data.rot = Vector3.new(0, 0, rotCont)
+        vectorarrow_data.pos = Vector3.new(0, 4, 1)
+        vectorarrow_data.rot = Vector3.new(0, 0, -rotCont)
+        sword_data.pos = Vector3.new(0, 0, 0.5)
+        sword_data.rot = Vector3.new(0, 90, 0)
+    elseif state == "sit" then
+        local s = math.sin(tick() * 2) * 10
+        targets.root = cf(Vector3.new(0, 0, 0), Vector3.new(0, 0, 0))
+        targets.neck = cf(Vector3.new(0, 0, 0), Vector3.new(0, 0, 0))
+        targets.rs = cf(Vector3.new(0, 0, 0), Vector3.new(35, -45+s, 0))
+        targets.ls = cf(Vector3.new(0, 0, 0), Vector3.new(35, 45+s, 0))
+        targets.rh = cf(Vector3.new(0, 0, 0), Vector3.new(-20+s, -20+s, 90))
+        targets.lh = cf(Vector3.new(0, 0, 0), Vector3.new(-20+s, 20+s, -90))
+        nebulablade_data.pos = Vector3.new(0, 4, 3)
+        nebulablade_data.rot = Vector3.new(-65, 0, rotCont)
+        vectorarrow_data.pos = Vector3.new(0, 3, 0)
+        vectorarrow_data.rot = Vector3.new(-90, 0, -rotCont)
+        sword_data.pos = Vector3.new(-3, 1, -1)
+        sword_data.rot = Vector3.new(90, 25, 0)
+    elseif state == "climb" then
+        targets.root = cf(Vector3.new(0, 0, 0), Vector3.new(0, 0, 0))
+        targets.neck = cf(Vector3.new(0, 0, 0), Vector3.new(0, 0, 0))
+        targets.rs = cf(Vector3.new(0, 0, 0), Vector3.new(-10, 0, 150))
+        targets.ls = cf(Vector3.new(0, 0, 0), Vector3.new(-10, 0, -150))
+        targets.rh = cf(Vector3.new(0, 0, 0), Vector3.new(-10, 0, 30))
+        targets.lh = cf(Vector3.new(0, 0, 0), Vector3.new(-10, 0, -30))
+        nebulablade_data.pos = Vector3.new(0, 2, 2)
+        nebulablade_data.rot = Vector3.new(0, 0, rotCont)
+        vectorarrow_data.pos = Vector3.new(0, 1, 1)
+        vectorarrow_data.rot = Vector3.new(0, 0, -rotCont)
+        sword_data.pos = Vector3.new(0, 0, 0.5)
+        sword_data.rot = Vector3.new(0, 90, 0)
+    elseif state == "nebula_idle" then
+        local s = math.sin(tick() * 2) * 1
+        local s2 = math.sin(tick() * 2) * 10
+        targets.root = cf(Vector3.new(0, 0, s), Vector3.new(s2, 0, 35))
+        targets.neck = cf(Vector3.new(0, 0, 0), Vector3.new(5+s2, s2, s2))
+        targets.rs = cf(Vector3.new(0, 0, 0), Vector3.new(120+s2, 30+s2, 20+s2))
+        targets.ls = cf(Vector3.new(0, 0, 0), Vector3.new(-20+s2, 40+s2, 20+s2))
+        targets.rh = cf(Vector3.new(0, 0.5, 0), Vector3.new(-5+s2, -30+s2, s2))
+        targets.lh = cf(Vector3.new(0, 0, 0), Vector3.new(s2, 30+s2, s2))
+        nebulablade_data.pos = Vector3.new(0, 0, 2)
+        nebulablade_data.rot = Vector3.new(-s2, 0, rotCont)
+        vectorarrow_data.pos = Vector3.new(0, -4, 0)
+        vectorarrow_data.rot = Vector3.new(90, 0, -rotCont)
+        sword_data.pos = Vector3.new(-3, -1.3, -3)
+        sword_data.rot = Vector3.new(40, -150, 0)
+    elseif state == "nebula_walkW" then
+        local s = math.sin(tick() * 2) * 1
+        local s2 = math.sin(tick() * 2) * 5
+        targets.root = cf(Vector3.new(0, 0, s), Vector3.new(50+s2, s, s))
+        targets.neck = cf(Vector3.new(0, 0, 0), Vector3.new(0, 0, 0))
+        targets.rs = cf(Vector3.new(0, 0, 0), Vector3.new(s2, s2, -30+s2))
+        targets.ls = cf(Vector3.new(0, 0, 0), Vector3.new(s2, s2, 30+s2))
+        targets.rh = cf(Vector3.new(0, 0.5, 0), Vector3.new(-5+s2, -30+s2, s2))
+        targets.lh = cf(Vector3.new(0, 0, 0), Vector3.new(s2, s2, 30+s2))
+        nebulablade_data.pos = Vector3.new(0, 3, 2)
+        nebulablade_data.rot = Vector3.new(0, 0, rotCont)
+        vectorarrow_data.pos = Vector3.new(0, -4, 0)
+        vectorarrow_data.rot = Vector3.new(90, 0, -rotCont)
+        sword_data.pos = Vector3.new(0, 0, 0.5)
+        sword_data.rot = Vector3.new(0, 90, 0)
+    elseif state == "nebula_walkA" then
+        local s = math.sin(tick() * 2) * 1
+        local s2 = math.sin(tick() * 2) * 5
+        targets.root = cf(Vector3.new(0, 0, s), Vector3.new(s2, 30+s2, s))
+        targets.neck = cf(Vector3.new(0, 0, 0), Vector3.new(0, 0, 0))
+        targets.rs = cf(Vector3.new(0, 0, 0), Vector3.new(s2, s2, -30+s2))
+        targets.ls = cf(Vector3.new(0, 0, 0), Vector3.new(s2, s2, 30+s2))
+        targets.rh = cf(Vector3.new(0, 0.5, 0), Vector3.new(-5+s2, -30+s2, s2))
+        targets.lh = cf(Vector3.new(0, 0, 0), Vector3.new(s2, s2, 30+s2))
+        nebulablade_data.pos = Vector3.new(0, 3, 2)
+        nebulablade_data.rot = Vector3.new(0, 0, rotCont)
+        vectorarrow_data.pos = Vector3.new(0, -4, 0)
+        vectorarrow_data.rot = Vector3.new(90, 0, -rotCont)
+        sword_data.pos = Vector3.new(0, 0, 0.5)
+        sword_data.rot = Vector3.new(0, 90, 0)
+    elseif state == "nebula_walkS" then
+        local s = math.sin(tick() * 2) * 1
+        local s2 = math.sin(tick() * 2) * 5
+        targets.root = cf(Vector3.new(0, 0, s), Vector3.new(-65+s2, s, s))
+        targets.neck = cf(Vector3.new(0, 0, 0), Vector3.new(0, 0, 0))
+        targets.rs = cf(Vector3.new(0, 0, 0), Vector3.new(s2, s2, -130+s2))
+        targets.ls = cf(Vector3.new(0, 0, 0), Vector3.new(s2, s2, 130+s2))
+        targets.rh = cf(Vector3.new(0, 0.5, 0), Vector3.new(-5+s2, -30+s2, s2))
+        targets.lh = cf(Vector3.new(0, 0, 0), Vector3.new(s2, s2, 30+s2))
+        nebulablade_data.pos = Vector3.new(0, 3, 2)
+        nebulablade_data.rot = Vector3.new(0, 0, rotCont)
+        vectorarrow_data.pos = Vector3.new(0, -4, 0)
+        vectorarrow_data.rot = Vector3.new(90, 0, -rotCont)
+        sword_data.pos = Vector3.new(0, 0, 0.5)
+        sword_data.rot = Vector3.new(0, 90, 0)
+    elseif state == "nebula_walkD" then
+        local s = math.sin(tick() * 2) * 1
+        local s2 = math.sin(tick() * 2) * 5
+        targets.root = cf(Vector3.new(0, 0, s), Vector3.new(s2, -30+s, s))
+        targets.neck = cf(Vector3.new(0, 0, 0), Vector3.new(0, 0, 0))
+        targets.rs = cf(Vector3.new(0, 0, 0), Vector3.new(s2, s2, -30+s2))
+        targets.ls = cf(Vector3.new(0, 0, 0), Vector3.new(s2, s2, 30+s2))
+        targets.rh = cf(Vector3.new(0, 0.5, 0), Vector3.new(-5+s2, -30+s2, s2))
+        targets.lh = cf(Vector3.new(0, 0, 0), Vector3.new(s2, s2, 30+s2))
+        nebulablade_data.pos = Vector3.new(0, 3, 2)
+        nebulablade_data.rot = Vector3.new(0, 0, rotCont)
+        vectorarrow_data.pos = Vector3.new(0, -4, 0)
+        vectorarrow_data.rot = Vector3.new(90, 0, -rotCont)
+        sword_data.pos = Vector3.new(0, 0, 0.5)
+        sword_data.rot = Vector3.new(0, 90, 0)
+    end
+
+    for n, target in pairs(targets) do
+        currentCFs[n] = currentCFs[n]:Lerp(target, lerpSpeed)
+        joints[n].Transform = currentCFs[n]
+    end
+    
+    nebulabladeCF = nebulabladeCF:Lerp(CFrame.new(nebulablade_data.pos), lerpSpeed)
+    nebulabladeCF = CFrame.new(nebulabladeCF.Position) * CFrame.fromEulerAnglesXYZ(math.rad(nebulablade_data.rot.X), math.rad(nebulablade_data.rot.Y), math.rad(nebulablade_data.rot.Z))
+
+    vectorarrowCF = vectorarrowCF:Lerp(CFrame.new(vectorarrow_data.pos), lerpSpeed)
+    vectorarrowCF = CFrame.new(vectorarrowCF.Position) * CFrame.fromEulerAnglesXYZ(math.rad(vectorarrow_data.rot.X), math.rad(vectorarrow_data.rot.Y), math.rad(vectorarrow_data.rot.Z))
+
+    swordCF = swordCF:Lerp(CFrame.new(sword_data.pos), lerpSpeed)
+    swordCF = CFrame.new(swordCF.Position) * CFrame.fromEulerAnglesXYZ(math.rad(sword_data.rot.X), math.rad(sword_data.rot.Y), math.rad(sword_data.rot.Z))
+    
+    if isNebulaFlying then
+        hum.HipHeight = 3
+    else
+        hum.HipHeight = 0
+    end
+end)
+
+task.spawn(function()
+    while char.Parent == workspace do
+        for i,v in pairs(parts) do
+            if nebulablade and v == nebulablade then
+                v.CFrame = tor.CFrame * nebulabladeCF
+            elseif vectorarrow and v == vectorarrow then
+                v.CFrame = tor.CFrame * vectorarrowCF
+            elseif sword and v == sword then
+                v.CFrame = tor.CFrame * swordCF
+            else
+                v.CFrame = cloneparts[i].CFrame
+            end
+            v.Velocity = Vector3.new(0, 35, 0)
+            v.CanCollide = false
+        end
+        hb:Wait()
+    end
+    clone:Destroy()
+end)
+
+hum.WalkSpeed = 30
+hum.JumpPower = 65
+
+task.wait(1)
+game:GetService("TextChatService").TextChannels.RBXGeneral:SendAsync("Fe Vector Nebula Blade By: C00l_Ch4os")
+game:GetService("TextChatService").TextChannels.RBXGeneral:SendAsync("All Keybind: Q")
