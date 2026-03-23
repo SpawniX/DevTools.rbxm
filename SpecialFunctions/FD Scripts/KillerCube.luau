@@ -1,9 +1,7 @@
 --[[
 	WARNING: Heads up! This script has not been verified by ScriptBlox. Use at your own risk!
 ]]
--- [[ FE CUBE MONSTER ULTIMATE V9 ]]
--- Специально для Глеба
--- Фикс: Голова по центру (0), смотрит ПРЯМО, только вверх-вниз
+
 
 local player = game.Players.LocalPlayer
 local mouse = player:GetMouse()
