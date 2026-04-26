@@ -2,7 +2,7 @@
 local player   = game.Players.LocalPlayer
 local HttpSvc  = game:GetService("HttpService")
 
-local old = player.PlayerGui:FindFirstChild("DevToolsR2H")
+local old = game.CoreGui:FindFirstChild("DevToolsR2H")
 if old then old:Destroy() end
 
 local C = {
@@ -74,7 +74,7 @@ gui.Name            = "DevToolsR2H"
 gui.ResetOnSpawn    = false
 gui.ZIndexBehavior  = Enum.ZIndexBehavior.Sibling
 gui.DisplayOrder    = 999
-gui.Parent          = player:WaitForChild("PlayerGui")
+gui.Parent          = game.CoreGui
 
 local root = Instance.new("Frame")
 root.Name              = "Root"
